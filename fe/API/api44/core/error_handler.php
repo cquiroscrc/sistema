@@ -20,6 +20,10 @@ function myExceptionHandler($e)
 set_exception_handler('myExceptionHandler');
 
 set_error_handler(function ($level, $message, $file = '', $line = 0) {
+    // PHP 8.x: E_DEPRECATED no debe abortar el proceso (solo se registra en el log de PHP)
+    if ($level === E_DEPRECATED || $level === E_USER_DEPRECATED) {
+        return false;
+    }
     throw new ErrorException($message, 0, $level, $file, $line);
 });
 
