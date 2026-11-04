@@ -33,7 +33,9 @@ export async function api<T = any>(a: string, params: Record<string, string | nu
 
 export type Estado = 'aceptado' | 'rechazado' | 'error' | 'pendiente' | 'enviando' | 'reintentar' | string;
 
+export interface MigResumen { total: number | null; pendientes: number | null; nombres: string[]; modificadas: string[]; revisado?: string; error?: string }
 export interface Status {
+  migraciones?: MigResumen;
   ok: boolean; ahora: string; usuario: string; servicio_activo: boolean;
   timer: Record<string, string>; servicio: Record<string, string>;
   bd: { host: string; database: string; restaurada: string | null };

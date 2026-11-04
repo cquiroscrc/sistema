@@ -76,16 +76,32 @@ Tras la restauración final de la BD en el corte hay que aplicarlo de nuevo.
   No se envía ningún correo ni se manda nada a Hacienda.
 - `paticas-buzon-fe.timer` cada 5 min → `paticas-buzon-fe.service` (www-data, `flock -n /run/lock/paticas-buzon-fe.lock`).
   "Sincronizar ahora" del panel hace `sudo systemctl start --no-block paticas-buzon-fe.service` (sudoers).
-- Script: `panel-hacienda/buzon/buzon-sync.php` (`--listar` carpetas, `--schema` DDL, `--eml=archivo` analizar sin escribir,
+- Script: `panel-hacienda/buzon/buzon-sync.php` (`--listar` carpetas, `--schema` = migraciones, `--eml=archivo` analizar sin escribir,
   `--importar-eml=archivo` prueba, `--max=N`). Bitácora `/var/lib/lospaticas/panel/buzon-sync.log`, estado `buzon-estado.json`.
 - Archivos en `/var/lib/lospaticas/fe/buzon/<aaaa>/<mm>/<clave>/` (`<clave>.xml`, `_respuesta.xml`, `.pdf`); PDFs sin clave en `sin-clave/`.
   No se publican por nginx: solo se sirven por `api.php?accion=buzon_archivo` (sesión + ruta validada con realpath).
 - Deduplicación: (cuenta, carpeta, UIDVALIDITY, UID) + Message-ID; documentos por CLAVE (upsert). Los XML/ZIP se analizan
   con DOCTYPE rechazado y sin red; ZIP limitado (200 entradas, 30 MB c/u, 100 MB total).
 - Se omiten por defecto los comprobantes emitidos por Los Paticas (`BUZON_IGNORAR_EMISORES=3101090358,310109035837`).
-- Tablas `FE_BUZON_CORREOS`, `FE_BUZON_DOCUMENTOS`, `FE_BUZON_ARCHIVOS` (DDL idempotente en `buzon/schema.sql`).
-  **Después de la restauración final de `inventario`**: ejecutar
-  `sudo -u www-data php8.5 /var/www/lospaticas/sistema/panel-hacienda/buzon/buzon-sync.php --schema` y luego
-  `sudo rm -f /var/lib/lospaticas/panel/buzon-estado.json && sudo systemctl start paticas-buzon-fe.service` (vuelve a escanear;
-  los archivos existentes se reutilizan por SHA-256).
+- Tablas `FE_BUZON_CORREOS`, `FE_BUZON_DOCUMENTOS`, `FE_BUZON_ARCHIVOS`: se crean con las migraciones (ver abajo).
+  Si faltan, la sincronización no falla: termina con estado **"sin tablas"** y el panel lo indica.
 - Pendiente / siguiente paso posible: enviar el MensajeReceptor (aceptación/rechazo) a Hacienda. **No implementado.**
+
+## Migraciones de BD (objetos propios del panel en `inventario`)
+- `panel-hacienda/db/migrations/NNNN_nombre.sql`, en orden e **idempotentes** (`IF OBJECT_ID(...) IS NULL`, `IF NOT EXISTS`; nunca DROP de datos):
+  - `0001_panel_migraciones.sql` — `dbo.PANEL_MIGRACIONES` (control: nombre, SHA-256, fecha, duración, usuario, host).
+  - `0002_fe_buzon_tablas.sql` — `FE_BUZON_CORREOS`, `FE_BUZON_DOCUMENTOS`, `FE_BUZON_ARCHIVOS` con PK/UNIQUE/DEFAULT e índices.
+  - El panel no crea otros objetos en la BD (bloqueo de login, sesiones y bitácora del panel están en `/var/lib/lospaticas/panel`;
+    la auditoría usa la tabla existente `dbo.BITACORA`). La corrección de rutas **no** es una migración: es la acción "Rutas" del panel.
+- Runner: `sudo -u www-data php8.5 /var/www/lospaticas/sistema/panel-hacienda/db/migrar.php --estado | --aplicar`
+  (usa `/etc/lospaticas/db.php`; una transacción por archivo; verifica los objetos de la línea `-- objetos:`; bitácora en
+  `/var/lib/lospaticas/panel/migraciones.log`; `--estado` sale con código 2 si hay pendientes).
+- El panel revisa las pendientes (caché de 2 min) y muestra **"Hay N migraciones pendientes"** con el botón **Aplicar migraciones**
+  (escribir `MIGRAR`, CSRF, queda en la bitácora).
+- Nueva migración: agregar `0003_...sql` idempotente con su línea `-- objetos:`; no editar las ya aplicadas (el panel las marca como modificadas).
+
+## Después de la restauración final de `inventario` (en este orden)
+1. Migraciones: `sudo -u www-data php8.5 /var/www/lospaticas/sistema/panel-hacienda/db/migrar.php --aplicar` (o el botón del panel).
+2. Rutas: pestaña "Rutas y DEData" → Aplicar rutas.
+3. Buzón FE: `sudo rm -f /var/lib/lospaticas/panel/buzon-estado.json && sudo systemctl start paticas-buzon-fe.service`
+   (vuelve a escanear todo el INBOX; los archivos ya guardados se reutilizan por SHA-256; ~13 corridas de 5 min, unos 65 min, o una manual con `--max=5000`).

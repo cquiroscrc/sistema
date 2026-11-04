@@ -3,6 +3,7 @@ declare(strict_types=1);
 require __DIR__ . '/lib.php';
 
 require_once __DIR__ . '/buzon/buzon-lib.php';
+require_once __DIR__ . '/db/migrar-lib.php';
 $a = $_GET['a'] ?? '';
 try {
     // Sin sesion solo se permite: sesion (token CSRF y estado), login y logout.
@@ -14,7 +15,9 @@ try {
     ph_require_login();
     switch ($a) {
         case 'grafico':  ph_json(api_grafico());
-        case 'status':   ph_json(api_status());
+        case 'status':   ph_json(api_status() + ['migraciones' => api_mig_resumen()]);
+        case 'migraciones':         ph_json(api_migraciones());
+        case 'migraciones_aplicar': ph_require_post(); ph_json(api_migraciones_aplicar());
         case 'logs':     ph_json(api_logs());
         case 'docs':     ph_json(api_docs());
         case 'doc':      ph_json(api_doc());
@@ -541,12 +544,13 @@ function api_dedata_sync(): array
 
 function bz_tablas_ok(): bool
 {
-    return (int)ph_db()->query("SELECT COUNT(*) FROM sys.tables WHERE name IN ('FE_BUZON_CORREOS','FE_BUZON_DOCUMENTOS','FE_BUZON_ARCHIVOS')")->fetchColumn() === 3;
+    static $ok = null;
+    return $ok ??= !mig_faltantes(ph_db(), ['dbo.FE_BUZON_CORREOS', 'dbo.FE_BUZON_DOCUMENTOS', 'dbo.FE_BUZON_ARCHIVOS']);
 }
 
 function bz_sin_tablas(): array
 {
-    return ['ok' => false, 'error' => 'Las tablas FE_BUZON_* no existen en esta BD (¿restauración nueva?). Ejecute: sudo -u www-data php8.5 panel-hacienda/buzon/buzon-sync.php --schema'];
+    return ['ok' => false, 'error' => 'Las tablas FE_BUZON_* no existen en esta BD (¿restauración nueva?). Use "Aplicar migraciones" (aviso arriba) o: sudo -u www-data php8.5 panel-hacienda/db/migrar.php --aplicar'];
 }
 
 function api_buzon_estado(): array
@@ -561,6 +565,10 @@ function api_buzon_estado(): array
 
 function api_buzon_sync(): array
 {
+    if (!bz_tablas_ok()) {
+        ph_accion_log('buzon: sincronizacion manual rechazada (faltan tablas FE_BUZON_*)');
+        return ['ok' => false, 'error' => 'Faltan las tablas FE_BUZON_* en la BD. Aplique primero las migraciones pendientes (aviso arriba).'] + api_buzon_estado();
+    }
     $out = []; $rc = 0;
     exec('/usr/bin/sudo -n /usr/bin/systemctl start --no-block paticas-buzon-fe.service 2>&1', $out, $rc);
     ph_accion("buzon: sincronizacion manual solicitada (rc=$rc)");
@@ -697,4 +705,28 @@ function api_buzon_archivo(): never
     header('Content-Length: ' . filesize($abs));
     readfile($abs);
     exit;
+}
+
+/* ---------------------------------------------- migraciones de BD (db/migrations) ---------------------------------------------- */
+function api_mig_resumen(bool $forzar = false): array
+{
+    $i = ph_db_info();
+    return mig_resumen(ph_db(), $i['host'] . '/' . $i['database'], $forzar);
+}
+
+function api_migraciones(): array
+{
+    $e = mig_estado(ph_db());
+    return ['ok' => true, 'bd' => ph_db_info(), 'migraciones' => $e, 'resumen' => api_mig_resumen(true)];
+}
+
+function api_migraciones_aplicar(): array
+{
+    if (($_POST['confirmar'] ?? '') !== 'MIGRAR') return ['ok' => false, 'error' => 'Escriba MIGRAR para confirmar'];
+    $i = ph_db_info();
+    ph_accion_log("migraciones: aplicar solicitado en {$i['host']}/{$i['database']}");
+    [$hechas, $err] = mig_aplicar(ph_db(), 'panel:' . ph_user());
+    if ($err) { ph_accion('migraciones: ERROR ' . $err . ($hechas ? ' (aplicadas antes del error: ' . implode(', ', $hechas) . ')' : ''), 'Error'); return ['ok' => false, 'error' => $err, 'resumen' => api_mig_resumen(true)]; }
+    ph_accion('migraciones: ' . ($hechas ? 'aplicadas ' . implode(', ', $hechas) : 'nada pendiente') . " en {$i['host']}/{$i['database']}");
+    return ['ok' => true, 'mensaje' => $hechas ? 'Migraciones aplicadas: ' . implode(', ', $hechas) : 'No había migraciones pendientes', 'aplicadas' => $hechas, 'resumen' => api_mig_resumen(true)];
 }

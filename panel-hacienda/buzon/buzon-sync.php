@@ -4,7 +4,7 @@ declare(strict_types=1);
  * Sincronizacion del Buzon FE (CLI, usuario www-data; lo ejecuta paticas-buzon-fe.service cada 5 min con flock).
  *   buzon-sync.php                 corrida normal (lectura IMAP solo lectura + extraccion)
  *   buzon-sync.php --listar        conectar y listar carpetas con cantidad de mensajes
- *   buzon-sync.php --schema        crear/actualizar las tablas FE_BUZON_* (idempotente)
+ *   buzon-sync.php --schema        = db/migrar.php --aplicar (crea las tablas que falten; idempotente)
  *   buzon-sync.php --importar-eml=archivo  importar un .eml local a la BD (cuenta 'prueba-local', para pruebas)
  *   buzon-sync.php --eml=archivo   analizar un .eml local (no escribe nada) y mostrar el resumen en JSON
  *   buzon-sync.php --max=N         limitar mensajes por corrida (por defecto BUZON_MAX_POR_CORRIDA o 300)
@@ -54,12 +54,12 @@ function bz_db(): PDO
     return $p;
 }
 
-function bz_schema(): void
+require_once dirname(__DIR__) . '/db/migrar-lib.php';
+
+/** Tablas FE_BUZON_* presentes (se crean con las migraciones: panel-hacienda/db/migrar.php --aplicar). */
+function bz_tablas_faltantes(PDO $db): array
 {
-    foreach (preg_split('/^\s*GO\s*$/mi', (string)file_get_contents(__DIR__ . '/schema.sql')) as $b) {
-        $b = trim(preg_replace('/^\s*--.*$/m', '', $b));
-        if ($b !== '') bz_db()->exec($b);
-    }
+    return mig_faltantes($db, ['dbo.FE_BUZON_CORREOS', 'dbo.FE_BUZON_DOCUMENTOS', 'dbo.FE_BUZON_ARCHIVOS']);
 }
 
 /** Guarda un archivo bajo BZ_BASE y devuelve la ruta relativa (reutiliza si ya existe identico). */
@@ -193,13 +193,25 @@ try {
         echo json_encode(['correo_id' => $cid, 'estado' => $est, 'documentos' => $n]), "\n";
         exit(0);
     }
-    if (isset($opt['schema'])) { bz_schema(); echo "esquema FE_BUZON_* aplicado\n"; exit(0); }
+    if (isset($opt['schema'])) {      // compatibilidad: equivale a db/migrar.php --aplicar
+        [$h, $err] = mig_aplicar(bz_db(), 'cli:buzon-sync --schema');
+        echo $h ? 'Aplicadas: ' . implode(', ', $h) . "\n" : "Nada pendiente.\n";
+        if ($err) { echo "$err\n"; exit(1); }
+        exit(0);
+    }
 
     $pub = ['host' => $cfg['host'], 'port' => $cfg['port'], 'usuario' => $cfg['user'], 'carpetas_cfg' => $cfg['carpetas'],
             'ignorar_emisores' => implode(',', $cfg['propios']), 'max_por_corrida' => $cfg['max']];
     if ($cfg['user'] === '' || $pass === '') {
         bz_estado(['estado' => 'sin credenciales', 'mensaje' => 'Falta IMAP_PASS en /etc/lospaticas/buzon-fe.env', 'inicio' => date('Y-m-d H:i:s'), 'fin' => date('Y-m-d H:i:s'), 'config' => $pub]);
         if (PHP_SAPI === 'cli') fwrite(STDERR, "sin credenciales\n");
+        exit(0);
+    }
+    if (!isset($opt['listar']) && ($falt = bz_tablas_faltantes(bz_db()))) {
+        $m = 'Faltan las tablas ' . implode(', ', $falt) . ' en la BD (¿restauración nueva?). Aplique las migraciones: botón "Aplicar migraciones" del panel o sudo -u www-data php8.5 panel-hacienda/db/migrar.php --aplicar';
+        bz_estado(['estado' => 'sin tablas', 'mensaje' => $m, 'inicio' => date('Y-m-d H:i:s'), 'fin' => date('Y-m-d H:i:s'), 'config' => $pub]);
+        bz_log('SIN TABLAS: ' . implode(', ', $falt) . ' (no se sincroniza)');
+        if (PHP_SAPI === 'cli') fwrite(STDERR, "sin tablas\n");
         exit(0);
     }
     $t0 = microtime(true);

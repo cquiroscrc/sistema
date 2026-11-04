@@ -12,6 +12,7 @@ import Cola from './pages/Cola';
 import Servicio from './pages/Servicio';
 import RutasDEData from './pages/RutasDEData';
 import BuzonFE from './pages/BuzonFE';
+import MigracionesAviso from './components/MigracionesAviso';
 
 export type Vista = 'inicio' | 'registro' | 'comprobantes' | 'cola' | 'servicio' | 'rutas' | 'buzon';
 const NAV: { id: Vista; label: string; icon: any }[] = [
@@ -80,6 +81,7 @@ export default function App() {
         </div>
       </header>
       <main className="min-w-0 flex-1 p-4 lg:p-8">
+        <MigracionesAviso m={status?.migraciones} bd={status?.bd?.database} onCambio={cargarStatus} />
         <ErrorBoundary key={vista} nombre={NAV.find(n => n.id === vista)?.label ?? vista}>
           {vista === 'inicio' && <Dashboard status={status} ir={ir} />}
           {vista === 'registro' && <Registro />}

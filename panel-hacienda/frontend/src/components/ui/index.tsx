@@ -62,6 +62,7 @@ const est: Record<string, { c: string; t: string }> = {
   muy_grande: { c: 'bg-warning/15 text-warning ring-warning/30', t: 'Muy grande' },
   'sin credenciales': { c: 'bg-warning/15 text-warning ring-warning/30', t: 'Sin credenciales' },
   'en curso': { c: 'bg-info/15 text-info ring-info/30', t: 'En curso' },
+  'sin tablas': { c: 'bg-warning/15 text-warning ring-warning/30', t: 'Faltan tablas' },
   correcto: { c: 'bg-success/15 text-success ring-success/25', t: 'Correcto' },
   nunca: { c: 'bg-muted text-muted-foreground ring-border', t: 'Nunca' },
 };
