@@ -20,11 +20,11 @@ export default function Comprobantes({ status, onCambio }: { status: Status | nu
   const paginas = data ? Math.max(1, Math.ceil(data.total / data.size)) : 1;
   return <div className="space-y-4">
     <Card className="p-4">
-      <form className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-6" onSubmit={e => { e.preventDefault(); cargar(1, f); }}>
+      <form className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 [&>*]:min-w-0" onSubmit={e => { e.preventDefault(); cargar(1, f); }}>
         <div><Label>Estado</Label><Select value={f.estado} onChange={set('estado')}><option value="">Todos</option><option value="aceptado">Aceptado</option><option value="rechazado">Rechazado</option>
           <option value="error">Error</option><option value="pendiente">Pendiente de respuesta</option><option value="procesando">Enviando / procesando</option><option value="reintentar">Marcado para reintento</option></Select></div>
         <div><Label>Tipo</Label><Select value={f.tipo} onChange={set('tipo')}><option value="">Todos</option><option value="FE">FE · Factura</option><option value="TE">TE · Tiquete</option><option value="NC">NC · Nota crédito</option><option value="ND">ND · Nota débito</option></Select></div>
-        <div className="lg:col-span-2"><Label>Buscar</Label><div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <div className="sm:col-span-2 lg:col-span-1 2xl:col-span-2"><Label>Buscar</Label><div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input className="pl-9" value={f.q} onChange={set('q')} placeholder="Número, clave, cédula o correo del receptor" /></div></div>
         <div><Label>Desde</Label><Input type="date" value={f.desde} onChange={set('desde')} /></div>
         <div className="flex gap-2"><div className="flex-1"><Label>Hasta</Label><Input type="date" value={f.hasta} onChange={set('hasta')} /></div><Button type="submit" className="mt-auto">Filtrar</Button></div>

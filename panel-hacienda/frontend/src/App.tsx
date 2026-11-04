@@ -76,7 +76,7 @@ export default function App() {
           <button onClick={tema} className="rounded-md p-2 hover:bg-muted" aria-label="Tema">{oscuro ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</button>
         </div>
       </header>
-      <main className="flex-1 p-4 lg:p-8">
+      <main className="min-w-0 flex-1 p-4 lg:p-8">
         {vista === 'inicio' && <Dashboard status={status} ir={ir} />}
         {vista === 'registro' && <Registro />}
         {vista === 'comprobantes' && <Comprobantes status={status} onCambio={cargarStatus} />}

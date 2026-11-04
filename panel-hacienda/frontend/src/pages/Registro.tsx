@@ -71,7 +71,7 @@ export default function Registro() {
   const set = (k: keyof Filtros) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF(s => ({ ...s, [k]: e.target.value }));
   return <div className="space-y-4">
     <Card className="p-4">
-      <form className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8" onSubmit={e => { e.preventDefault(); cargar(f); }}>
+      <form className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8 [&>*]:min-w-0" onSubmit={e => { e.preventDefault(); cargar(f); }}>
         <div className="xl:col-span-2"><Label>Fuente</Label><Select value={f.src} onChange={set('src')}>{FUENTES.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</Select></div>
         <div><Label>Nivel</Label><Select value={f.nivel} onChange={set('nivel')}><option value="">Todos</option><option>Error</option><option>Warning</option><option>Info</option><option>Debug</option></Select></div>
         <div><Label>Texto</Label><Input value={f.q} onChange={set('q')} placeholder="buscar…" /></div>

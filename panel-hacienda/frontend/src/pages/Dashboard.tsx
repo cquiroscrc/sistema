@@ -41,9 +41,9 @@ export default function Dashboard({ status, ir }: { status: Status | null; ir: (
               <YAxis tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} allowDecimals={false} />
               <Tooltip cursor={{ fill: 'hsl(var(--muted))' }} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} labelStyle={{ color: 'hsl(var(--foreground))' }} />
               <Legend wrapperStyle={{ fontSize: 12 }} iconType="circle" />
-              <Bar dataKey="aceptados" name="Aceptados" stackId="a" fill="hsl(var(--success))" />
-              <Bar dataKey="rechazados" name="Rechazados" stackId="a" fill="hsl(var(--danger))" />
-              <Bar dataKey="otros" name="Error / pendientes" stackId="a" fill="hsl(var(--warning))" radius={[4, 4, 0, 0]} />
+              <Bar isAnimationActive={false} dataKey="aceptados" name="Aceptados" stackId="a" fill="hsl(var(--success))" />
+              <Bar isAnimationActive={false} dataKey="rechazados" name="Rechazados" stackId="a" fill="hsl(var(--danger))" />
+              <Bar isAnimationActive={false} dataKey="otros" name="Error / pendientes" stackId="a" fill="hsl(var(--warning))" radius={[4, 4, 0, 0]} />
             </BarChart></ResponsiveContainer>}</CardBody>
       </Card>
       <Card>
