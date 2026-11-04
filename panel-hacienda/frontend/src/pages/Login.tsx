@@ -20,7 +20,7 @@ export default function Login({ onOk, oscuro, onTema }: { onOk: (u: { usuario: s
       <div className="mb-6 flex flex-col items-center text-center">
         <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg"><Receipt className="h-6 w-6" /></div>
         <h1 className="text-lg font-semibold">Panel de facturación electrónica</h1>
-        <p className="text-sm text-muted-foreground">Ingrese con su usuario del sistema PATICAS</p>
+        <p className="text-sm text-muted-foreground">Ingrese con su usuario del POS</p>
       </div>
       <div className="space-y-4">
         <div><Label htmlFor="u">Usuario</Label>

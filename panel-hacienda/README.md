@@ -16,12 +16,12 @@
   (`/etc/sudoers.d/paticas-hacienda-panel`, argumentos exactos).
 
 ## Acceso (login)
-- Usuarios de `inventario.dbo.tbl_SEC_Usuarios` (la BD de `/etc/lospaticas/db.php`), los mismos del sistema PATICAS de escritorio.
-  La tabla guarda `Username`/`Password` en texto plano (char 30/15) y no tiene columna de "activo": se compara
-  `RTRIM(Username)` (sin distinguir mayúsculas, collation de la BD) y la contraseña exacta con `hash_equals`.
-  Para quitar el acceso a alguien, borrarlo o cambiarle la contraseña en el sistema.
-- Restricción por grupo opcional: `PH_GRUPOS_PERMITIDOS` en `lib.php` (vacío = todos; propuesta `[1]` = 01-Administradores;
-  hoy todos los usuarios son grupo 1).
+- Usuarios de `inventario.dbo.acc_usuarios` (la BD de `/etc/lospaticas/db.php`), con la misma lógica que el login del POS
+  (`/POS/ingreso` → `ControladorUsuarios::ctrIngresoUsuario`): usuario solo `[a-zA-Z0-9]`, búsqueda `WHERE usuario = ?`
+  (primera fila), usuario y contraseña comparados exactos (texto plano, sin recortar, distingue mayúsculas) y `estado = 1`.
+  Para quitar el acceso a alguien: `estado = 0` o cambiar su contraseña en el POS.
+- Restricción por perfil opcional (columna `acceso`, = `$_SESSION['perfil']` del POS): `PH_PERFILES_PERMITIDOS` en `lib.php`
+  (vacío = todos los activos; propuesta `['total']`, el perfil administrador del POS).
 - Sesión PHP `PANELHACIENDA`: cookie Secure + HttpOnly + SameSite=Strict (path `/panel-hacienda/`), `session_regenerate_id` al entrar,
   cierre por inactividad 30 min y máximo 12 h, CSRF en todo POST (login incluido).
   Las sesiones se guardan en `/var/lib/lospaticas/panel/sessions` (www-data 700), no en `/var/lib/php/sessions`, porque el cron

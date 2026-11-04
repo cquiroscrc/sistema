@@ -23,9 +23,9 @@ const PH_IDLE_SEG    = 1800;      // cierre de sesion por inactividad (30 min)
 const PH_MAX_SEG     = 43200;     // duracion maxima de una sesion (12 h)
 const PH_FALLOS_MAX  = 5;         // intentos fallidos antes de bloquear
 const PH_BLOQUEO_SEG = 900;       // bloqueo de 15 min por usuario y por IP
-// Grupos de tbl_SEC_Grupos que pueden entrar. Vacio = cualquier usuario de tbl_SEC_Usuarios.
-// Propuesta: [1] (01-Administradores); hoy los 7 usuarios son del grupo 1.
-const PH_GRUPOS_PERMITIDOS = [];
+// Perfiles (columna acceso de dbo.acc_usuarios, = $_SESSION['perfil'] del POS) que pueden entrar.
+// Vacio = cualquier usuario activo (estado = 1). Propuesta: ['total'] (perfil administrador del POS).
+const PH_PERFILES_PERMITIDOS = [];
 
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
@@ -228,7 +228,7 @@ function ph_accion(string $msg, string $nivel = 'Info', string $doc = '', string
     ph_bitacora($msg . ' [usuario ' . (ph_user() ?: '-') . ', IP ' . ph_ip() . ']', $nivel, $doc, $tipo);
 }
 
-/* ---------------- Login contra dbo.tbl_SEC_Usuarios ---------------- */
+/* ---------------- Login contra dbo.acc_usuarios (igual que /POS/ingreso) ---------------- */
 function ph_fallos_archivo(): string { return PH_DATA . '/login-fallos.json'; }
 
 /** Lee/actualiza contadores de fallos con bloqueo de archivo. $fn recibe el arreglo por referencia. */
@@ -249,7 +249,7 @@ function ph_fallos(callable $fn)
 
 function ph_login(string $usuario, string $password): array
 {
-    $usuario = trim($usuario);
+    // Sin recortar espacios, igual que el POS (la expresion regular los rechaza).
     if ($usuario === '' || $password === '' || mb_strlen($usuario) > 30 || strlen($password) > 64) return ['ok' => false, 'error' => 'Usuario o contraseña incorrectos'];
     $kU = 'u:' . mb_strtolower($usuario); $kI = 'ip:' . ph_ip_clave();
     $bloq = ph_fallos(fn(array &$d) => max($d[$kU]['n'] ?? 0, $d[$kI]['n'] ?? 0) >= PH_FALLOS_MAX);
@@ -257,32 +257,40 @@ function ph_login(string $usuario, string $password): array
         ph_accion_log("login BLOQUEADO usuario=$usuario ip=" . ph_ip());
         return ['ok' => false, 'error' => 'Demasiados intentos fallidos. Intente de nuevo en 15 minutos.'];
     }
-    // Mismo criterio que la tabla del sistema PATICAS: Username y Password (char, texto plano) recortados.
-    // Usuario: comparacion de la BD (Modern_Spanish_CI_AS, sin distinguir mayusculas). Contraseña: exacta (hash_equals).
-    $st = ph_db()->prepare('SELECT idUsuario, idGrupo, RTRIM(Descripcion) AS nombre, RTRIM(Username) AS usuario, RTRIM(Password) AS pw FROM dbo.tbl_SEC_Usuarios WHERE RTRIM(Username) = ?');
-    $st->execute([$usuario]);
-    $rows = $st->fetchAll(PDO::FETCH_ASSOC);
-    $ok = null;
-    foreach ($rows as $r) {
-        if (hash_equals((string)$r['pw'], $password)) { $ok = $r; break; }
+    // Misma logica que el login del POS (/POS/ingreso -> ControladorUsuarios::ctrIngresoUsuario):
+    // usuario solo [a-zA-Z0-9]; SELECT * FROM acc_usuarios WHERE usuario = ? (primera fila); usuario y password
+    // comparados exactos contra lo escrito (texto plano, sin recortar); estado == 1; perfil = columna acceso.
+    // Aqui con hash_equals (sin las conversiones numericas de == en PHP).
+    $ok = null; $motivo = 'credenciales';
+    if (preg_match('/^[a-zA-Z0-9]+$/', $usuario)) {
+        $st = ph_db()->prepare('SELECT id, usuario, password, nombre, acceso, estado FROM dbo.acc_usuarios WHERE usuario = ?');
+        $st->execute([$usuario]);
+        $r = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        $st->closeCursor();
+        if ($r && hash_equals((string)$r['usuario'], $usuario) && hash_equals((string)$r['password'], $password)) {
+            if ((int)$r['estado'] !== 1) $motivo = 'inactivo';
+            else $ok = $r;
+        }
+        unset($r);
     }
-    unset($rows, $password);
-    if ($ok && PH_GRUPOS_PERMITIDOS && !in_array((int)$ok['idGrupo'], PH_GRUPOS_PERMITIDOS, true)) {
-        ph_accion_log("login RECHAZADO (grupo {$ok['idGrupo']} no permitido) usuario=$usuario ip=" . ph_ip());
-        ph_bitacora("login rechazado por grupo: $usuario", 'Warning');
+    unset($password);
+    if ($ok && PH_PERFILES_PERMITIDOS && !in_array(trim((string)$ok['acceso']), PH_PERFILES_PERMITIDOS, true)) {
+        ph_accion_log("login RECHAZADO (perfil {$ok['acceso']} no permitido) usuario=$usuario ip=" . ph_ip());
+        ph_bitacora("login rechazado por perfil: $usuario", 'Warning');
         return ['ok' => false, 'error' => 'Su usuario no tiene acceso a este panel'];
     }
     if (!$ok) {
         ph_fallos(function (array &$d) use ($kU, $kI) { foreach ([$kU, $kI] as $k) $d[$k] = ['n' => ($d[$k]['n'] ?? 0) + 1, 't' => time()]; });
-        ph_accion_log("login FALLIDO usuario=$usuario ip=" . ph_ip());
+        ph_accion_log("login FALLIDO ($motivo) usuario=$usuario ip=" . ph_ip());
         ph_bitacora("login fallido: $usuario (IP " . ph_ip() . ')', 'Warning');
-        return ['ok' => false, 'error' => 'Usuario o contraseña incorrectos'];
+        return ['ok' => false, 'error' => $motivo === 'inactivo' ? 'Usuario inactivo' : 'Usuario o contraseña incorrectos'];
     }
     ph_fallos(function (array &$d) use ($kU) { unset($d[$kU]); });
     session_regenerate_id(true);
     $_SESSION['usuario'] = ph_utf8($ok['usuario']);
     $_SESSION['nombre'] = ph_utf8($ok['nombre']);
-    $_SESSION['grupo'] = (int)$ok['idGrupo'];
+    $_SESSION['perfil'] = trim((string)$ok['acceso']);
+    $_SESSION['id_usuario'] = (int)$ok['id'];
     $_SESSION['inicio'] = $_SESSION['ultimo'] = time();
     $_SESSION['csrf'] = bin2hex(random_bytes(32));
     ph_accion('login correcto');
