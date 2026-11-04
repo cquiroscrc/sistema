@@ -221,14 +221,13 @@ function api_doc(): array
 /* ---------------- Cola de envio (misma consulta que ProcesarPendientesEnvio, solo lectura) ---------------- */
 function cola_sql(string $top): string
 {
-    $db = ph_db();
-    $nit = trim((string)$db->query("SELECT NIT FROM dbo.[COMPAÑIAS] WHERE CONFIGURADA='SI'")->fetchColumn());
-    $fi = trim((string)$db->query("SELECT CONVERT(varchar(10), FECHA_NORMATIVA, 121) FROM dbo.[COMPAÑIAS] WHERE CONFIGURADA='SI'")->fetchColumn());
-    $nit = preg_replace('/[^0-9A-Za-z-]/', '', $nit); $fi = preg_replace('/[^0-9-]/', '', $fi);
+    // Misma logica que ProcesarPendientesEnvio (admin.php); NIT y FECHA_NORMATIVA se leen como subconsulta
     return "SELECT $top V.TIPO_DOCUMENTO, RTRIM(V.DOCUMENTO) AS DOCUMENTO, RTRIM(V.NIT) NIT, CONVERT(varchar(19), V.FECHA, 120) FECHA, RTRIM(p.ESTADO) ESTADO
         FROM V_DOCUMENTO_ELECTRONICO v LEFT JOIN DOC_ELECTRONICO_PROCESADO p ON v.DOCUMENTO = p.NUMERO_DOC
-        WHERE v.ACEPTA_DOC_ELECTRONICO = 'S' AND v.NIT NOT IN ('$nit') AND V.TIPO_DOCUMENTO IN ('FE','NC','ND','TE')
-        AND NOT v.SAT IS NULL AND v.FECHA >= '$fi' AND v.DOCUMENTO <> 'F-00000000027825'
+        WHERE v.ACEPTA_DOC_ELECTRONICO = 'S' AND V.TIPO_DOCUMENTO IN ('FE','NC','ND','TE')
+        AND v.NIT NOT IN (SELECT RTRIM(NIT) FROM dbo.[COMPAÑIAS] WHERE CONFIGURADA = 'SI')
+        AND NOT v.SAT IS NULL AND v.FECHA >= (SELECT TOP 1 FECHA_NORMATIVA FROM dbo.[COMPAÑIAS] WHERE CONFIGURADA = 'SI')
+        AND v.DOCUMENTO <> 'F-00000000027825'
         AND ((p.ENVIADO IS NULL AND p.ACEPTADO IS NULL) OR p.ENVIADO = 'N')
         AND (p.ESTADO IS NULL OR p.ESTADO NOT IN ('rechazado', 'error'))";
 }
