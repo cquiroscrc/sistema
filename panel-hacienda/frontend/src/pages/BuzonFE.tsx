@@ -34,7 +34,7 @@ function EstadoSync({ onCambio }: { onCambio: () => void }) {
           <p className="truncate text-xs text-muted-foreground">IMAP {cfg.host || 'mail.lospaticas.com'}:{cfg.port || 993} · solo lectura · carpetas {cfg.carpetas_cfg || 'INBOX'} · cada 5 min ({e?.timer?.ActiveState === 'active' ? 'timer activo' : 'timer inactivo'})</p></div>
       </div>
       <div className="flex items-center gap-2">
-        {corriendo ? <EstadoBadge estado="en curso" /> : <EstadoBadge estado={s.estado || 'nunca'} />}
+        {corriendo ? <EstadoBadge estado="en curso" /> : <EstadoBadge estado={s.estado === 'ok' ? 'correcto' : s.estado || 'nunca'} />}
         <Button size="sm" onClick={sync} loading={lanzando} disabled={corriendo}><RefreshCw className={cn('h-3.5 w-3.5', corriendo && 'animate-spin')} />Sincronizar ahora</Button>
       </div>
     </CardHeader>
