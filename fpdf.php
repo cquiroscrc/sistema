@@ -73,7 +73,8 @@ var $PDFVersion;         // PDF version number
 *                               Public methods                                 *
 *                                                                              *
 *******************************************************************************/
-function FPDF($orientation='P', $unit='mm', $size='A4')
+// PHP 8: un metodo con el nombre de la clase (estilo PHP4) ya no es constructor; renombrado a __construct
+function __construct($orientation='P', $unit='mm', $size='A4')
 {
 	// Some checks
 	$this->_dochecks();

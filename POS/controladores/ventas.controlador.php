@@ -672,7 +672,7 @@ class ControladorVentas{
 	SUMA TOTAL VENTAS
 	=============================================*/
 
-	public function ctrSumaTotalVentas(){
+	static public function ctrSumaTotalVentas(){ // PHP 8: se llama como ControladorVentas::ctrSumaTotalVentas() (estatico)
 
 		$tabla = "hfacturas";
 
