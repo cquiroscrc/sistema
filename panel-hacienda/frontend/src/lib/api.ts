@@ -12,7 +12,7 @@ export const apiUrl = (a: string, params: Record<string, string | number | undef
 let onUnauthorized: () => void = () => {};
 export const setOnUnauthorized = (f: () => void) => { onUnauthorized = f; };
 
-export async function api<T = any>(a: string, params: Record<string, string | number | undefined> = {}, post?: Record<string, string>): Promise<T> {
+export async function api<T = any>(a: string, params: Record<string, string | number | undefined> = {}, post?: Record<string, string>, reintento = false): Promise<T> {
   const opt: RequestInit = { credentials: 'same-origin', headers: { 'X-Requested-With': 'panel' } };
   if (post) {
     opt.method = 'POST';
@@ -23,6 +23,11 @@ export async function api<T = any>(a: string, params: Record<string, string | nu
   try { j = await r.json(); } catch { j = { ok: false, error: `Respuesta inválida del servidor (${r.status})` }; }
   if (r.status === 401 && a !== 'login' && a !== 'sesion') { onUnauthorized(); throw new NoAutorizado(j.error || 'Sesión expirada'); }
   if (j && j.csrf) csrf = j.csrf;
+  // Token CSRF vencido (sesion expirada/renovada): el servidor no ejecuto nada; se pide un token nuevo y se reintenta una vez.
+  if (r.status === 403 && j?.codigo === 'csrf' && post && !reintento) {
+    await api('sesion');
+    return api<T>(a, params, post, true);
+  }
   return j as T;
 }
 

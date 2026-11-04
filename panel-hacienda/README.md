@@ -24,6 +24,9 @@
   hoy todos los usuarios son grupo 1).
 - Sesión PHP `PANELHACIENDA`: cookie Secure + HttpOnly + SameSite=Strict (path `/panel-hacienda/`), `session_regenerate_id` al entrar,
   cierre por inactividad 30 min y máximo 12 h, CSRF en todo POST (login incluido).
+  Las sesiones se guardan en `/var/lib/lospaticas/panel/sessions` (www-data 700), no en `/var/lib/php/sessions`, porque el cron
+  `phpsessionclean` de Ubuntu borra ese directorio a los 24 min y dejaba inválido el token de un login abierto un rato.
+  Si el token CSRF vence, la interfaz pide uno nuevo y reintenta una vez automáticamente.
 - Bloqueo: 5 fallos por usuario o por IP (IP real vía Cloudflare) → 15 min (`/var/lib/lospaticas/panel/login-fallos.json`).
 - Auditoría: login correcto/fallido/bloqueado, logout y cada acción quedan en `/var/lib/lospaticas/panel/acciones.log`
   y en `dbo.BITACORA` (`SESSION_ID='panel-hacienda'`) con usuario e IP. Sin sesión, `api.php` responde 401 (salvo `sesion`/`login`).

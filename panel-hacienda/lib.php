@@ -35,6 +35,13 @@ header('Referrer-Policy: same-origin');
 ini_set('session.use_strict_mode', '1');
 ini_set('session.use_only_cookies', '1');
 ini_set('session.gc_maxlifetime', (string)PH_MAX_SEG);
+// Directorio propio: el cron phpsessionclean de Ubuntu borra /var/lib/php/sessions con el gc_maxlifetime global
+// (1440 s = 24 min), lo que invalidaba el token CSRF de una pantalla de login abierta mas de ~24 min.
+const PH_SESS_DIR = PH_DATA . '/sessions';
+if (!is_dir(PH_SESS_DIR)) @mkdir(PH_SESS_DIR, 0700, true);
+ini_set('session.save_path', PH_SESS_DIR);
+ini_set('session.gc_probability', '1');
+ini_set('session.gc_divisor', '100');
 session_name('PANELHACIENDA');
 session_set_cookie_params(['lifetime' => 0, 'path' => '/panel-hacienda/', 'httponly' => true, 'samesite' => 'Strict', 'secure' => true]);
 session_start();
@@ -116,7 +123,7 @@ function ph_json($data, int $code = 200): never
 function ph_require_post(): void
 {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !hash_equals($_SESSION['csrf'], (string)($_POST['csrf'] ?? ''))) {
-        ph_json(['ok' => false, 'error' => 'Solicitud invalida (CSRF). Recargue la pagina.'], 403);
+        ph_json(['ok' => false, 'codigo' => 'csrf', 'error' => 'Solicitud invalida (CSRF). Recargue la pagina.', 'csrf' => $_SESSION['csrf']], 403);
     }
 }
 
