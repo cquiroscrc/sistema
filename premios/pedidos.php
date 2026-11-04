@@ -65,7 +65,7 @@ $to = "hhernandezv@lospaticas.com,galfaroa@lospaticas.com,formulario@lospaticas.
 
     $message .= '<h3>Posible llegada *** '.$llegada.' ***</h3>';
 
-    $message .='<a target="_blank" href="http://170.81.32.82:88/reportes/Rep_mail_'.$factura.'.pdf">**** Abrir el pedido '.$factura.'****</a>';
+    $message .='<a target="_blank" href="https://sistema.lospaticas.com/reportes/Rep_mail_'.$factura.'.pdf">**** Abrir el pedido '.$factura.'****</a>';
     
     $message .= "</br>";
 
@@ -87,12 +87,12 @@ $to = "hhernandezv@lospaticas.com,galfaroa@lospaticas.com,formulario@lospaticas.
         ?>
         <SCRIPT LANGUAGE="javascript"> // Redirecciona al home
             if ($ip_premio=="170.81.32.82") {
-                setTimeout("location.href = 'http://172.16.12.3:88/index.php';",1500);    
+                setTimeout("location.href = '/index.php';",1500);    
             }else{
                 if ($ip_premio=="201.195.22.182") {
-                    setTimeout("location.href = 'http://172.16.12.3:88/index.php';",1500);    
+                    setTimeout("location.href = '/index.php';",1500);    
                 }else{
-                    setTimeout("location.href = 'http://paticas.no-ip.org:88/index.php';",1500);    
+                    setTimeout("location.href = '/index.php';",1500);    
                 }
                 
             }
@@ -102,12 +102,12 @@ $to = "hhernandezv@lospaticas.com,galfaroa@lospaticas.com,formulario@lospaticas.
         <?php
         
         if ($ip_premio="170.81.32.82") {
-                echo '<a href="http://172.16.12.3:88/index.php"><img width="48"  height="48" src= "send.png">Volver</a> ';
+                echo '<a href="/index.php"><img width="48"  height="48" src= "send.png">Volver</a> ';
             }else{
                 if ($ip_premio="201.195.22.182") {
-                    echo '<a href="http://172.16.12.3:88/index.php"><img width="48"  height="48" src= "send.png">Volver</a> ';
+                    echo '<a href="/index.php"><img width="48"  height="48" src= "send.png">Volver</a> ';
                 }else{
-                    echo '<a href="http://paticas.no-ip.org:88/index.php"><img width="48"  height="48" src= "send.png">Volver</a> ';
+                    echo '<a href="/index.php"><img width="48"  height="48" src= "send.png">Volver</a> ';
 
                 }
                 

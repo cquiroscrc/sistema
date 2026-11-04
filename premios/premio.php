@@ -116,12 +116,12 @@ if(isset($_REQUEST['id_premio']) && !empty($_REQUEST['id_premio'])){
 
 <SCRIPT LANGUAGE="javascript"> // Redirecciona al home  
     if ($ip_premio="170.81.32.82") {
-        setTimeout("location.href = 'http://172.16.12.3:88/premios/fin.php';",100);    
+        setTimeout("location.href = '/premios/fin.php';",100);    
     }else{
         if ($ip_premio="201.195.22.182") {
-            setTimeout("location.href = 'http://172.16.12.3:88/premios/fin.php';",100);    
+            setTimeout("location.href = '/premios/fin.php';",100);    
         }else{
-            setTimeout("location.href = 'http://lospaticas.servehttp.com:88/premios/fin.php';",100);
+            setTimeout("location.href = '/premios/fin.php';",100);
         }
     }
 </SCRIPT> 

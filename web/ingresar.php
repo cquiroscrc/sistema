@@ -50,8 +50,8 @@ function getRealIP()
   $ip1='170.81.32.82';
   $ip2='201.195.22.182';
 
-  $dirlocal="http://172.16.12.3:88/POS";
-  $direxterna="http://paticas.no-ip.org:88/POS";
+  $dirlocal="/POS/"; // migracion: antes http://172.16.12.3:88/POS (servidor viejo)
+  $direxterna="/POS/"; // migracion: antes http://paticas.no-ip.org:88/POS
 
   if((isset($_POST['username']))and(!empty($_POST['username']))){
     $usuario = $_POST['username'];

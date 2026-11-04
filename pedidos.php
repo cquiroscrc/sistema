@@ -65,7 +65,7 @@ $to = "hhernandezv@lospaticas.com,galfaroa@lospaticas.com,formulario@lospaticas.
 
     $message .= '<h3>Posible llegada *** '.$llegada.' ***</h3>';
 
-    $message .='<a target="_blank" href="http://170.81.32.82:88/reportes/Rep_mail_'.$factura.'.pdf">**** Abrir el pedido '.$factura.'****</a>';
+    $message .='<a target="_blank" href="https://sistema.lospaticas.com/reportes/Rep_mail_'.$factura.'.pdf">**** Abrir el pedido '.$factura.'****</a>';
     
     $message .= "</br>";
 
@@ -85,7 +85,7 @@ $to = "hhernandezv@lospaticas.com,galfaroa@lospaticas.com,formulario@lospaticas.
         echo '<br>';
 
 
-        echo '<a href="http://170.81.32.82:88/index.php"><img width="48"  height="48" src= "send.png">Volver</a> ';
+        echo '<a href="/index.php"><img width="48"  height="48" src= "send.png">Volver</a> ';
 
     } else{
 

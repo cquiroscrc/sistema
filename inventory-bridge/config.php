@@ -24,5 +24,5 @@ return [
 	
     // Carpeta local con subcarpetas de un carácter (0-9 / letra) y las fotos dentro.
     // Debe coincidir con la estructura que usa Odoo (p. ej. D:\fotos\subida_cat).
-    'images_root' => 'C:\\xampp\\htdocs\\web paticas\\sistema\\subida_cat',
+    'images_root' => '/var/www/lospaticas/sistema/subida_cat', // migracion: antes C:\\xampp\\htdocs\\web paticas\\sistema\\subida_cat
 ];
