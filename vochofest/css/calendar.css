@@ -1,0 +1,97 @@
+
+.CalFld{
+	border:1px solid #404040;
+	border-right-color:#D4D0C8;
+	border-bottom-color:#D4D0C8;
+}
+Table.CalFld TD{
+	padding:7px;
+	font:16px Tahoma;
+}
+
+Table#Calendar{
+	border:1px solid #404040;
+	border-left-color:white;
+	border-top-color:white;
+	position:absolute;
+	padding:1px;
+	background:#D4D0C8;
+	margin:0px;
+	z-index:10;
+	visibility:hidden;
+	top:0px;
+	left:0px;
+}
+
+#Calendar Table{border:0;}
+
+#Calendar TD{
+	padding:0px;
+	font:11px Tahoma;
+	background:#D4D0C8;
+}
+
+#Calendar Select{
+	font:99% Tahoma;
+	background:white;
+	width:auto;
+}
+#Calendar Select:focus{outline:none;}
+/*#Calendar Table Table{font:70% Tahoma;}*/
+
+#Calendar Input{
+	font:100% Tahoma;
+	text-align:center;
+	border-width:1px;
+	padding:0px;
+}
+
+#Calendar .CalDays{
+	background-color:white;
+	border:2px inset white;
+	vertical-align:top;
+	height:90%;
+	cursor:default;
+}
+
+#Calendar .CalDays TD{
+	text-align:center;
+	padding:3px 5px;
+	background:white;
+	border:0;
+}
+
+#Calendar .Week TD{
+	background-color:navy;
+	color:white;
+	border:0;
+	padding-right:0;
+	padding-left:0;
+}
+
+#Calendar .CalDays TD.SelDay{
+	background-color:blue;
+	color:yellow;
+}
+
+#Calendar .CalDays TD.CalToday{
+	padding:1px 3px 1px 3px;
+	border:2px solid #1E90FF;
+	border-radius:9px;
+}
+#Calendar .CalDays TD.SelDay.CalToday{border-radius:0px;}
+
+.CalFldData{cursor:pointer;}
+.CalFldData.Andr{vertical-align:bottom;}
+
+.CalFldNone{visibility:hidden;}
+.CalFldDis{color:gray;}
+
+#Calendar TD.CalClear{
+	color:#B22222;
+	font-weight:bold;
+	font-family:Arial;
+	cursor:pointer;
+}
+
+#Calendar TD.CalClear:hover{color:red;}

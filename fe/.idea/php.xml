@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="MessDetectorOptionsConfiguration">
+    <option name="transferred" value="true" />
+  </component>
+  <component name="PHPCSFixerOptionsConfiguration">
+    <option name="transferred" value="true" />
+  </component>
+  <component name="PHPCodeSnifferOptionsConfiguration">
+    <option name="highlightLevel" value="WARNING" />
+    <option name="transferred" value="true" />
+  </component>
+  <component name="PhpIncludePathManager">
+    <include_path>
+      <path value="$PROJECT_DIR$/API/vendor/ralouphie/getallheaders" />
+      <path value="$PROJECT_DIR$/API/vendor/symfony/deprecation-contracts" />
+      <path value="$PROJECT_DIR$/API/vendor/composer" />
+      <path value="$PROJECT_DIR$/API/vendor/psr/http-message" />
+      <path value="$PROJECT_DIR$/API/vendor/guzzlehttp/promises" />
+      <path value="$PROJECT_DIR$/API/vendor/psr/http-client" />
+      <path value="$PROJECT_DIR$/API/vendor/guzzlehttp/psr7" />
+      <path value="$PROJECT_DIR$/API/vendor/guzzlehttp/guzzle" />
+      <path value="$PROJECT_DIR$/API/api44/tools/phpmailer/vendor/phpmailer/phpmailer" />
+      <path value="$PROJECT_DIR$/API/api44/tools/phpmailer/vendor/composer" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/SymbolPalette" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/TreeMap" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/CurrencyTextbox" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/RadialSlider" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Rotator" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/CheckBox" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Autocomplete" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/CircularGauge" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Dialog" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/TimePicker" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/ReportViewer" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/composer" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/ComboBox" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Diagram" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Services" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/ColorPicker" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/DataManager" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/ProgressBar" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/DigitalGauge" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Pager" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Chart" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/FileExplorer" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Menu" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/LinearGauge" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/DatePicker" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/HeatMap" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Schedule" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/SplitButton" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/RangeNavigator" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/NumericTextbox" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Accordion" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Tooltip" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/WaitingPopup" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Toolbar" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/PivotGrid" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/ListView" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Grid" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/RadioButton" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Map" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/PivotChart" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/RadialMenu" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/TreeView" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Gantt" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/TreeGrid" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/ListBox" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Tile" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Sparkline" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/PercentageTextbox" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/PivotTreeMap" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/MaskEdit" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Button" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/vlucas/phpdotenv" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Kanban" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/PivotSchemaDesigner" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/HeatMapLegend" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/doctrine/lexer" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/RTE" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/SunburstChart" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/symfony/polyfill-iconv" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/DateTimePicker" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/symfony/polyfill-mbstring" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/PivotGauge" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/symfony/polyfill-php70" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Slider" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/symfony/polyfill-ctype" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/GroupButton" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/symfony/polyfill-intl-normalizer" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/NavigationDrawer" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/symfony/polyfill-php72" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Uploadbox" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Scroller" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/symfony/polyfill-intl-idn" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/PivotPager" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/DropDownList" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/ToggleButton" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Overview" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Rating" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/TagCloud" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/BulletGraph" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Ribbon" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/egulias/email-validator" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/swiftmailer/swiftmailer" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/phpoption/phpoption" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Barcode" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Query" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/paragonie/random_compat" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Signature" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Splitter" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Tab" />
+      <path value="$PROJECT_DIR$/ADMIN/vendor/EJ/Spreadsheet" />
+      <path value="$PROJECT_DIR$/API/api/tools/phpmailer/vendor/phpmailer/phpmailer" />
+      <path value="$PROJECT_DIR$/API/api/tools/phpmailer/vendor/composer" />
+    </include_path>
+  </component>
+  <component name="PhpProjectSharedConfiguration" php_language_level="7.0">
+    <option name="suggestChangeDefaultLanguageLevel" value="false" />
+  </component>
+  <component name="PhpStanOptionsConfiguration">
+    <option name="transferred" value="true" />
+  </component>
+  <component name="PsalmOptionsConfiguration">
+    <option name="transferred" value="true" />
+  </component>
+</project>

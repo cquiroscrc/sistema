@@ -1,0 +1,22 @@
+[[90m15:18:45[39m] Requiring external module @babel/register
+{ src: 'src/', build: 'dist/', assets: 'assets/' }
+{
+  coreFiles: [
+    'src/assets/js/core/jquery.min.js',
+    'src/assets/js/core/bootstrap.bundle.min.js',
+    'src/assets/js/core/simplebar.min.js',
+    'src/assets/js/core/jquery-scrollLock.min.js',
+    'src/assets/js/core/jquery.appear.min.js',
+    'src/assets/js/core/jquery.countTo.min.js',
+    'src/assets/js/core/js.cookie.min.js'
+  ],
+  core: 'src/assets/js/codebase.core*.min.js',
+  main: 'src/assets/js/codebase.app*.min.js',
+  api: 'src/assets/js/api/*.min.js',
+  pages: [ 'src/assets/js/pages/**/*.min.js' ]
+}
+[[90m15:18:48[39m] Using gulpfile D:\laragon\www\ADMIN\gulpfile.babel.js
+[[90m15:18:48[39m] Starting 'js-api-dev'...
+[[90m15:18:48[39m]             ****************Terminando!***************************
+[[90m15:18:48[39m] webpack-stream - No files given; aborting compilation
+[[90m15:18:48[39m] Finished 'js-api-dev' after 21 ms

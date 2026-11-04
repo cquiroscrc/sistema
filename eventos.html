@@ -1,0 +1,97 @@
+      	  
+        
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html>
+
+    <head>
+	
+    <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<script src="js/jquery.min.js"></script>
+	<script src="js/jquery.inputmask.bundle.min.js"></script>
+	<script src="js/jquery.maskedinput.min.js" type="text/javascript"></script>
+
+	<link href="css/bootstrap.min.css" rel="stylesheet">
+	
+	<link rel="icon" href="favicon.ico">
+	
+    <title>Consulta Eventos</title>
+
+	<script type="text/javascript">
+        jQuery(function($){
+          
+            $("#nombre").mask("**** *** ?*** *****");
+
+            
+        });
+    </script>
+
+  <!-- referenciamos al archivo ajax.js donde se encuentra nuestra funcion objetoAjax-->
+
+    <!--<script language="JavaScript" type="text/javascript" src="ajax.js"></script> -->
+	<script src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js" type="text/javascript"></script>
+     <script>
+        function buscar(){
+            var url="consulta_eventos.php"
+            var user= document.getElementById("nombre").value
+
+            $.ajax({
+                type: "POST",
+                url:url,
+                data:{nombre:user},
+                success: function(datos){
+
+                    $('#tabla').html(datos);
+                    document.getElementById("nombre").value="";
+                }
+            });
+        }
+     </script>
+	
+
+    </head>
+
+
+    <body>
+	
+    <h3>Consultar Codigos</h3>
+    <table WIDTH=400 border =1>
+          <tr>
+                    
+                    <td>1= Volkswagen</td>
+                    <td>2= Daihatsu</td>
+                    <td>3= Empi</td>
+                    <td>4= Grupo Ns</td>
+            </tr>
+                    <td>5= Familia VW</td>
+                    <td>6= Descripcion</td>
+                    <td>7= Volvo</td>
+                    <td>9= Accesorios</td>
+          </tr>
+          </table>
+    	<br>
+
+  <table>
+
+       <tr>
+           <td><input type="text"  onkeypress="myFunction()"/></td><tr />
+           <td><input type="text" id="nombre" /></td><tr />
+
+           <tr><td>.</td></tr>
+           <td><input type="submit" onclick="buscar();" value="Buscar Código" /></td>
+			     
+
+       </tr>
+</table>
+<div id="tabla" style="padding-top:10px;"></div>
+  <div id="resultado"></div>
+
+
+  <script>
+  function myFunction() {
+    document.getElementById("nombre").style.backgroundColor = "red";
+  }
+</script>
+  </body>
+
+</html>

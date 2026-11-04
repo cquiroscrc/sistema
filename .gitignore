@@ -1,0 +1,14 @@
+# Ignorados para el repo de revision (binarios grandes / dependencias JS)
+node_modules/
+*.pdf
+*.exe
+*.dll
+*.zip
+*.rar
+*.7z
+*.gz
+*.m3u
+*.mp4
+*.iso
+*.msi
+*.bak

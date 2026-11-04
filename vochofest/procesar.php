@@ -1,0 +1,91 @@
+<?php
+  session_start();
+  date_default_timezone_set("America/Costa_Rica"); // pone la hora correctamente
+  include("conectarDB.php");
+
+  if((isset($_GET['salir']))and($_GET['salir']=='si')){
+    session_destroy();
+    header("location: index.php");
+    die;
+  }
+
+  if((isset($_POST['nombre']))and(!empty($_POST['nombre']))){
+    $usuario = $_POST['nombre'];
+    echo $usuario;
+  }
+  
+  if((isset($_POST['contrasena']))and(!empty($_POST['contrasena']))){
+    $clave = $_POST['contrasena'];
+    echo $clave;
+  }
+
+   function getRealIP()
+    {
+   
+      if (isset($_SERVER["HTTP_CLIENT_IP"]))
+      {
+          return $_SERVER["HTTP_CLIENT_IP"];
+      }
+      elseif (isset($_SERVER["HTTP_X_FORWARDED_FOR"]))
+      {
+          return $_SERVER["HTTP_X_FORWARDED_FOR"];
+      }
+      elseif (isset($_SERVER["HTTP_X_FORWARDED"]))
+      {
+          return $_SERVER["HTTP_X_FORWARDED"];
+      }
+      elseif (isset($_SERVER["HTTP_FORWARDED_FOR"]))
+      {
+          return $_SERVER["HTTP_FORWARDED_FOR"];
+      }
+      elseif (isset($_SERVER["HTTP_FORWARDED"]))
+      {
+          return $_SERVER["HTTP_FORWARDED"];
+      }
+      else
+      {
+          return $_SERVER["REMOTE_ADDR"];
+      }
+   
+    }
+   
+  //echo  getRealIP()
+  if(((isset($usuario))and(!empty($usuario)))and((isset($clave))and(!empty($clave)))){
+    $sql = "SELECT * from usuarios
+    where usuario='".$usuario."' and password='".$clave."'";
+    echo $sql;
+    $acceso=0;
+    //busca el valor de usuario y password
+    $resultado = mysql_query($sql);
+    if (!$resultado) {
+      $mensaje  = 'Consulta no válida: ' . mysql_error() . "\n";    
+      die($mensaje);
+    }
+    
+    $cantidad = mysql_affected_rows();
+    if($cantidad>0){
+      while ($fila = mysql_fetch_assoc($resultado)) {
+        $_SESSION['profile']['nombre'] = $fila['nombre'];
+        $_SESSION['profile']['id']=$fila['id'];
+        $_SESSION['profile']['tipo'] = $fila['acceso'];
+      }
+      
+      $sql_update = "UPDATE usuarios SET ip='".getRealIP()."', fecha='".date("d/m/y H:i:s")."' WHERE usuario ='".$usuario."'";
+      if(!mysql_query($sql_update)){
+        echo mysql_errno() . ": ";
+        echo mysql_error() . "<BR>";
+    }
+
+      mysql_free_result($resultado);
+      header("location: index.php");
+
+    }else{
+      mysql_free_result($resultado);
+      header("location: login.php?error=1");
+    }
+  
+  }else{
+      mysql_free_result($resultado);
+      header("location: login.php?error=1");
+  }
+?>
