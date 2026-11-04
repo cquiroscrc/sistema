@@ -4,6 +4,7 @@ import { api, setCsrf, setOnUnauthorized, type Status } from './lib/api';
 import { cn } from './lib/utils';
 import { Spinner, useToast } from './components/ui';
 import Login from './pages/Login';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import Dashboard from './pages/Dashboard';
 import Registro from './pages/Registro';
 import Comprobantes from './pages/Comprobantes';
@@ -77,12 +78,14 @@ export default function App() {
         </div>
       </header>
       <main className="min-w-0 flex-1 p-4 lg:p-8">
-        {vista === 'inicio' && <Dashboard status={status} ir={ir} />}
-        {vista === 'registro' && <Registro />}
-        {vista === 'comprobantes' && <Comprobantes status={status} onCambio={cargarStatus} />}
-        {vista === 'cola' && <Cola />}
-        {vista === 'servicio' && <Servicio status={status} onCambio={cargarStatus} />}
-        {vista === 'rutas' && <RutasDEData />}
+        <ErrorBoundary key={vista} nombre={NAV.find(n => n.id === vista)?.label ?? vista}>
+          {vista === 'inicio' && <Dashboard status={status} ir={ir} />}
+          {vista === 'registro' && <Registro />}
+          {vista === 'comprobantes' && <Comprobantes status={status} onCambio={cargarStatus} />}
+          {vista === 'cola' && <Cola />}
+          {vista === 'servicio' && <Servicio status={status} onCambio={cargarStatus} />}
+          {vista === 'rutas' && <RutasDEData />}
+        </ErrorBoundary>
       </main>
     </div>
   </div>;

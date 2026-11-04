@@ -17,8 +17,8 @@ export default function Dashboard({ status, ir }: { status: Status | null; ir: (
   const [dias, setDias] = useState<'14' | '30' | '90'>('30');
   const [serie, setSerie] = useState<any[] | null>(null);
   const [recientes, setRecientes] = useState<DocRow[] | null>(null);
-  useEffect(() => { setSerie(null); api('grafico', { dias }).then(j => setSerie(j.ok ? j.rows : [])); }, [dias]);
-  useEffect(() => { api('docs', { estado: 'rechazado', size: 6 }).then(j => setRecientes(j.ok ? j.rows.slice(0, 6) : [])); }, []);
+  useEffect(() => { setSerie(null); api('grafico', { dias }).then(j => setSerie(j.ok ? (j.rows ?? []) : [])); }, [dias]);
+  useEffect(() => { api('docs', { estado: 'rechazado', size: 6 }).then(j => setRecientes(j.ok ? (j.rows ?? []).slice(0, 6) : [])); }, []);
   const c = status?.conteos;
   const activo = !!status?.servicio_activo;
   return <div className="space-y-6">

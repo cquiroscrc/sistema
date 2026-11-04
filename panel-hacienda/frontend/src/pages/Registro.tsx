@@ -35,7 +35,7 @@ export default function Registro() {
     try {
       const j = await api('logs', params(x));
       if (!j.ok) { toast('error', j.error); return; }
-      setRows([...j.rows].reverse());
+      setRows([...(j.rows ?? [])].reverse());
       cur.current = { nuevo: j.cursor_nuevo, antiguo: j.cursor_antiguo, mas: j.mas };
       setInfo(j.aviso || '');
       abajo();
@@ -46,7 +46,7 @@ export default function Registro() {
     const j = await api('logs', { ...params(fRef.current), before: cur.current.antiguo ?? undefined });
     if (!j.ok) return;
     const el = caja.current; const h = el?.scrollHeight ?? 0;
-    setRows(r => [...[...j.rows].reverse(), ...r]);
+    setRows(r => [...[...(j.rows ?? [])].reverse(), ...r]);
     cur.current = { ...cur.current, antiguo: j.cursor_antiguo, mas: j.mas };
     requestAnimationFrame(() => { if (el) el.scrollTop = el.scrollHeight - h; });
   };
@@ -60,8 +60,8 @@ export default function Registro() {
       const j = await api('logs', { ...params({ ...x, desde: '', hasta: '' }), since: cur.current.nuevo }).catch(() => null);
       if (!j?.ok) return;
       cur.current.nuevo = j.cursor_nuevo ?? cur.current.nuevo;
-      if (j.rows.length) {
-        setRows(r => [...r.map(y => ({ ...y, nuevo: false })), ...[...j.rows].reverse().map((y: LogRow) => ({ ...y, nuevo: true }))].slice(-3000));
+      if (j.rows?.length) {
+        setRows(r => [...r.map(y => ({ ...y, nuevo: false })), ...[...(j.rows ?? [])].reverse().map((y: LogRow) => ({ ...y, nuevo: true }))].slice(-3000));
         if (auto) abajo();
       }
     }, 3000);

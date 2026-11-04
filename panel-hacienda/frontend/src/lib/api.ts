@@ -3,16 +3,16 @@ let csrf = '';
 export const setCsrf = (t: string) => { csrf = t; };
 export class NoAutorizado extends Error {}
 
-export const apiUrl = (a: string, params: Record<string, string | number | undefined> = {}) => {
+export const apiUrl = (a: string, params: Record<string, string | number | undefined> | null | undefined = {}) => {
   const q = new URLSearchParams({ a });
-  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== '') q.set(k, String(v)); });
+  Object.entries(params ?? {}).forEach(([k, v]) => { if (v !== undefined && v !== '') q.set(k, String(v)); });
   return 'api.php?' + q.toString();
 };
 
 let onUnauthorized: () => void = () => {};
 export const setOnUnauthorized = (f: () => void) => { onUnauthorized = f; };
 
-export async function api<T = any>(a: string, params: Record<string, string | number | undefined> = {}, post?: Record<string, string>, reintento = false): Promise<T> {
+export async function api<T = any>(a: string, params: Record<string, string | number | undefined> | null = {}, post?: Record<string, string>, reintento = false): Promise<T> {
   const opt: RequestInit = { credentials: 'same-origin', headers: { 'X-Requested-With': 'panel' } };
   if (post) {
     opt.method = 'POST';

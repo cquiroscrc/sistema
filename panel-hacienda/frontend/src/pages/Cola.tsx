@@ -5,7 +5,7 @@ import { Button, Card, CardHeader, CardTitle, Empty, Pill, Spinner } from '../co
 
 export default function Cola() {
   const [rows, setRows] = useState<any[] | null>(null);
-  const cargar = () => { setRows(null); api('cola').then(j => setRows(j.ok ? j.rows : [])); };
+  const cargar = () => { setRows(null); api('cola').then(j => setRows(j.ok ? (j.rows ?? []) : [])); };
   useEffect(cargar, []);
   return <Card>
     <CardHeader><div><CardTitle>Documentos que tomaría el próximo lote</CardTitle>
