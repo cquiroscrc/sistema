@@ -21,6 +21,11 @@
 
    function getRealIP()
     {
+      // Migracion: detras de Cloudflare Tunnel la IP real del cliente llega en CF-Connecting-IP
+      if (!empty($_SERVER["HTTP_CF_CONNECTING_IP"])) {
+          return $_SERVER["HTTP_CF_CONNECTING_IP"];
+      }
+
       if (isset($_SERVER["HTTP_CLIENT_IP"]))
       {
           return $_SERVER["HTTP_CLIENT_IP"];
