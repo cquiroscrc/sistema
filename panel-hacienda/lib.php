@@ -16,6 +16,8 @@ const PH_DEDATA      = '/var/lib/lospaticas/fe/DEData';           // XML/PDF (co
 const PH_CORTE_SQL   = '/etc/lospaticas/corte-hacienda.sql';
 const PH_DATA        = '/var/lib/lospaticas/panel';                // respaldos JSON y bitacora de acciones del panel
 const PH_SYNC_LOG    = '/var/log/paticas-dedata-sync.log';
+// Columnas de dbo.COMPAÑIAS que la correccion de rutas puede modificar
+const RUTAS_COLS = '/^(IDP_(PROD|STAG)_(CERT_URL|RUTA_CERT|FILE_CERT)|XML_PATH|PDF_PATH|TEMPLATE_PATH)$/';
 const PH_SYNC_BIN    = '/usr/local/sbin/paticas-dedata-sync';
 
 if (empty($_SERVER['REMOTE_USER'])) {           // nginx debe autenticar; si no, no se sirve nada

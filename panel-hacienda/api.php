@@ -372,7 +372,6 @@ function api_xml(): never
 }
 
 /* ---------------- Correccion de rutas (corte-hacienda.sql) ---------------- */
-const RUTAS_COLS = '/^(IDP_(PROD|STAG)_(CERT_URL|RUTA_CERT|FILE_CERT)|XML_PATH|PDF_PATH|TEMPLATE_PATH)$/';
 
 function rutas_plan(): array
 {
