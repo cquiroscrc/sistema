@@ -230,7 +230,7 @@ $error = 1;
     if ($acceso=='caja') {
                       
     }else{
-      echo '<a href="consulta_simple_imprime.php?codigo='.$codigo.'"><img width="48"  height="48" src= "img/PDF.png">Generar PDF</a> ';
+      echo '<a href="consulta_simple_imprime.php?codigo='.$codigo.'"><img width="48"  height="48" src= "img/pdf.png">Generar PDF</a> ';
     }
     ?>
    <script type="text/javascript">

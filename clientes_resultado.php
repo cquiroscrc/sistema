@@ -70,7 +70,7 @@ $sql = "SELECT * from clientes";
             echo '<td>'.$id_cliente.'</td><td>'.$nombre.'</td><td>'.$cedula.'</td><td>'.$telefono.'</td><td>'.$celular.'</td><td>'.$provincia.'</td><td>'.$canton.'</td><td>'.$distrito.'</td><td>'.$direccion.'</td>';       
             echo '<td>'.$correo.'</td><td>'.date("d-m-Y", $nacimiento).'</td><td>'.date("d-m-Y", $afiliacion).'</td><td>'.$comentario.'</td>';       
             echo '<td><a href="clientes_actualizar.php?id='.$id_cliente.'"><img width="48"  height="48" src= "img/editar.png"></a></td>';
-            //echo '<td><a href="usuarioS_eliminar.php?id='.$id_usuario.'"><img width="48"  height="48" src= "img/eliminar.png"></a></td></tr>';        
+            //echo '<td><a href="usuarios_eliminar.php?id='.$id_usuario.'"><img width="48"  height="48" src= "img/eliminar.png"></a></td></tr>';        
             //echo "<td><a class = 'echo_link' href='#' onclick='if(confirm(\"Desea eliminar este Cliente?\")) 
             //            location.href=\"clientes_eliminar.php?id=".$id_cliente."\";
             //            '><img width='48'  height='48' src= 'img/eliminar.png'></a></td>";

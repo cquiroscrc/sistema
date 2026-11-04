@@ -242,7 +242,7 @@ MODAL Editar Asociado
   		<script src="js/jquery.min.js"></script>
   		<script src="vendor/bootstrap/js/bootstrap.min.js"></script>
   		<!-- DataTables -->
-	    <script src="vendor/DataTables/dataTables.min.js"></script>
+	    <script src="vendor/DataTables/datatables.min.js"></script>
 		
 		<script>
 

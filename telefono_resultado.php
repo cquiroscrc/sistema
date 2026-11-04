@@ -52,7 +52,7 @@ $sql = "SELECT * from tbl_TEL_Numeros order by Descripcion";
             echo '<tr>';
             echo '<td>'.$id.'</td><td>'.$nombre.'</td><td>'.$telefono.'</td><td>'.$correo.'</td>';       
             echo '<td><a href="telefono_actualizar.php?id='.$id.'"><img width="48"  height="48" src= "img/editar.png"></a></td>';
-            //echo '<td><a href="usuarioS_eliminar.php?id='.$id_usuario.'"><img width="48"  height="48" src= "img/eliminar.png"></a></td></tr>';        
+            //echo '<td><a href="usuarios_eliminar.php?id='.$id_usuario.'"><img width="48"  height="48" src= "img/eliminar.png"></a></td></tr>';        
             echo "<td><a class = 'echo_link' href='#' onclick='if(confirm(\"Desea eliminar este Telefono?\")) 
                         location.href=\"telefono_eliminar.php?id=".$id."\";
                         '><img width='48'  height='48' src= 'img/eliminar.png'></a></td>";

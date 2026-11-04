@@ -56,7 +56,7 @@ $sql = "SELECT * from Proveedores order by codigo";
             echo '<tr>';
             echo '<td>'.$id_proveedor.'</td><td>'.$nombre.'</td><td>'.$telefono.'</td><td>'.$direccion.'</td><td>'.$corto.'</td><td>'.$tipo.'</td>';       
             echo '<td><a href="proveedores_actualizar.php?id='.$id_proveedor.'"><img width="48"  height="48" src= "img/editar.png"></a></td>';
-            //echo '<td><a href="usuarioS_eliminar.php?id='.$id_usuario.'"><img width="48"  height="48" src= "img/eliminar.png"></a></td></tr>';        
+            //echo '<td><a href="usuarios_eliminar.php?id='.$id_usuario.'"><img width="48"  height="48" src= "img/eliminar.png"></a></td></tr>';        
             echo "<td><a class = 'echo_link' href='#' onclick='if(confirm(\"Desea eliminar este Proveedor?\")) 
                         location.href=\"proveedores_eliminar.php?id=".$id_proveedor."\";
                         '><img width='48'  height='48' src= 'img/eliminar.png'></a></td>";

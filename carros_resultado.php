@@ -83,7 +83,7 @@ $sql = "SELECT * from VAG where Marca= '$marca' order by Marca,Tipo, Year,Placa"
             <?php 
             echo'<td>'.$motor.'</td><td>'.$tipo2.'</td>';       
             echo '<td><a href="carros_actualizar.php?id='.$placa.'"><img width="48"  height="48" src= "img/editar.png"></a></td>';
-            //echo '<td><a href="usuarioS_eliminar.php?id='.$id_usuario.'"><img width="48"  height="48" src= "img/eliminar.png"></a></td></tr>';        
+            //echo '<td><a href="usuarios_eliminar.php?id='.$id_usuario.'"><img width="48"  height="48" src= "img/eliminar.png"></a></td></tr>';        
             //echo "<td><a class = 'echo_link' href='#' onclick='if(confirm(\"Desea eliminar este Cliente?\")) 
             //            location.href=\"clientes_eliminar.php?id=".$id_cliente."\";
             //            '><img width='48'  height='48' src= 'img/eliminar.png'></a></td>";

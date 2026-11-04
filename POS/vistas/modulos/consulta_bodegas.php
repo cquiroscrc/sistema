@@ -320,7 +320,7 @@ if ($codigo != "") {
 </table>
 <?php
 // Llama la generacion de PDF
-echo '<a href="../consulta_simple_imprime.php?codigo='.$codigo.'" target="_blank"><img width="48"  height="48" src= "../img/PDF.png">Generar PDF</a> ';
+echo '<a href="../consulta_simple_imprime.php?codigo='.$codigo.'" target="_blank"><img width="48"  height="48" src= "../img/pdf.png">Generar PDF</a> ';
 
 ?>
 <script>

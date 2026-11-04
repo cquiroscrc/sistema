@@ -57,7 +57,7 @@ $error = 1;
     ventimp.close();};"><img width="48"  height="48" src= "img/imprime.png">Imprimir</a> -->
     <a href="ventas_dia.php"><img width="48"  height="48" src= "img/back.png">Volver</a>
     <?php 
-      echo '<a href="ventas_imprime.php?Date2='.$fecha2.'"><img width="48"  height="48" src= "img/PDF.png">Generar PDF</a>';
+      echo '<a href="ventas_imprime.php?Date2='.$fecha2.'"><img width="48"  height="48" src= "img/pdf.png">Generar PDF</a>';
      ?>
     <center><h1>Consulta de codigos vendidos el dia</h1>
     <div id ="muestra">
