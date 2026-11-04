@@ -12,6 +12,13 @@ try {
         case 'cola':     ph_json(api_cola());
         case 'reintentar': ph_require_post(); ph_json(api_reintentar());
         case 'servicio': ph_require_post(); ph_json(api_servicio());
+        case 'pdf':      api_pdf();
+        case 'xml':      api_xml();
+        case 'rutas':    ph_json(api_rutas_preview());
+        case 'rutas_aplicar':  ph_require_post(); ph_json(api_rutas_aplicar());
+        case 'rutas_revertir': ph_require_post(); ph_json(api_rutas_revertir());
+        case 'dedata':   ph_json(api_dedata_estado());
+        case 'dedata_sync': ph_require_post(); ph_json(api_dedata_sync());
         default:         ph_json(['ok' => false, 'error' => 'Accion desconocida'], 400);
     }
 } catch (Throwable $e) {
@@ -154,7 +161,8 @@ function api_docs(): array
     $st = $db->prepare("SELECT RTRIM(d.TIPO_DOC) TIPO_DOC, RTRIM(d.NUMERO_DOC) NUMERO_DOC, RTRIM(d.SELLO_SAT) SELLO_SAT, CONVERT(varchar(19), d.FECHA_HORA, 120) FECHA_HORA,
         RTRIM(d.FECHATIMBRADO) FECHATIMBRADO, RTRIM(d.NIT_RECEPTOR) NIT_RECEPTOR, RTRIM(d.EMAIL_RECEPTOR) EMAIL_RECEPTOR, d.TOTALCOMPROBANTE, RTRIM(d.ESTADO) ESTADO,
         d.ENVIADO, d.ACEPTADO, RTRIM(d.EMAIL_ENVIADO) EMAIL_ENVIADO, LEFT(d.ULTIMO_ERROR, 300) ULTIMO_ERROR,
-        CASE WHEN d.XML_RESPUESTA IS NULL OR d.XML_RESPUESTA = '' THEN 0 ELSE 1 END TIENE_RESP
+        CASE WHEN d.XML_RESPUESTA IS NULL OR d.XML_RESPUESTA = '' THEN 0 ELSE 1 END TIENE_RESP,
+        CASE WHEN DATALENGTH(d.PDF) > 0 THEN 1 ELSE 0 END TIENE_PDF, d.PDF_PATH
         FROM dbo.DOC_ELECTRONICO_PROCESADO d $where ORDER BY d.FECHA_HORA DESC OFFSET $off ROWS FETCH NEXT $size ROWS ONLY");
     $st->execute($p);
     $rows = [];
@@ -168,6 +176,7 @@ function api_docs(): array
             'total' => $r['TOTALCOMPROBANTE'] !== null ? (float)$r['TOTALCOMPROBANTE'] : null,
             'estado' => estado_ui($r), 'estado_bd' => $r['ESTADO'], 'correo' => $r['EMAIL_ENVIADO'],
             'error' => ph_mask(ph_utf8($r['ULTIMO_ERROR'])),
+            'pdf' => (int)$r['TIENE_PDF'] === 1 || ($clave !== '' && ph_dedata_file($r['PDF_PATH'], $r['FECHATIMBRADO'], $clave . '.pdf') !== null),
         ];
     }
     return ['ok' => true, 'total' => $total, 'page' => $page, 'size' => $size, 'rows' => $rows];
@@ -215,7 +224,10 @@ function api_doc(): array
         'consecutivo' => xml_val($xml, "//*[local-name()='NumeroConsecutivo']"),
         'mensaje_hacienda' => xml_val($resp, "//*[local-name()='DetalleMensaje']"),
         'xml' => $xml, 'xml_respuesta' => $resp, 'bitacora' => $bit,
-        'puede_reintentar' => puede_reintentar($r)];
+        'puede_reintentar' => puede_reintentar($r),
+        'pdf' => doc_pdf($tipo, $num, true) !== null,
+        'xml_firmado' => $xml !== '' || ph_dedata_file($r['XML_PATH'], $r['FECHATIMBRADO'], $r['SELLO_SAT'] . '.xml') !== null,
+        'xml_resp' => $resp !== '' || ph_dedata_file($r['XML_PATH'], $r['FECHATIMBRADO'], 'RSP_' . $r['SELLO_SAT'] . '.xml') !== null];
 }
 
 /* ---------------- Cola de envio (misma consulta que ProcesarPendientesEnvio, solo lectura) ---------------- */
@@ -277,4 +289,223 @@ function api_servicio(): array
     exec('/usr/bin/sudo -n /usr/bin/systemctl ' . $acc . ' ' . escapeshellarg(PH_UNIT . '.timer') . ' 2>&1', $out, $rc);
     error_log('panel-hacienda: ' . $_SERVER['REMOTE_USER'] . " systemctl $acc " . PH_UNIT . ".timer rc=$rc");
     return ['ok' => $rc === 0, 'rc' => $rc, 'salida' => implode("\n", $out), 'timer' => ph_systemctl_show(PH_UNIT . '.timer', ['ActiveState'])];
+}
+
+/* ---------------- PDF / XML ---------------- */
+function doc_row(string $tipo, string $num, string $extra = ''): ?array
+{
+    $st = ph_db()->prepare("SELECT TOP 1 RTRIM(TIPO_DOC) TIPO_DOC, RTRIM(NUMERO_DOC) NUMERO_DOC, RTRIM(SELLO_SAT) SELLO_SAT, RTRIM(FECHATIMBRADO) FECHATIMBRADO, PDF_PATH, XML_PATH $extra
+        FROM dbo.DOC_ELECTRONICO_PROCESADO WHERE TIPO_DOC = ? AND NUMERO_DOC = ?");
+    $st->execute([$tipo, $num]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+    return $r ?: null;
+}
+
+function lob($v): string
+{
+    if (is_resource($v)) $v = stream_get_contents($v);
+    return (string)$v;
+}
+
+/** Devuelve [contenido, origen] del PDF (BD columna PDF o archivo en DEData), o null. */
+function doc_pdf(string $tipo, string $num, bool $soloExiste = false): ?array
+{
+    $r = doc_row($tipo, $num, ', DATALENGTH(PDF) PDF_LEN');
+    if (!$r) return null;
+    $clave = preg_replace('/\D/', '', (string)$r['SELLO_SAT']);
+    $f = strlen($clave) === 50 ? ph_dedata_file($r['PDF_PATH'], $r['FECHATIMBRADO'], $clave . '.pdf') : null;
+    if ($f !== null) return [$soloExiste ? '' : file_get_contents($f), 'archivo DEData', $clave];
+    if ((int)$r['PDF_LEN'] > 0) {
+        if ($soloExiste) return ['', 'BD', $clave];
+        $st = ph_db()->prepare('SELECT PDF FROM dbo.DOC_ELECTRONICO_PROCESADO WHERE TIPO_DOC = ? AND NUMERO_DOC = ?');
+        $st->execute([$tipo, $num]);
+        $pdf = lob($st->fetchColumn());
+        if (!str_starts_with($pdf, '%PDF')) { $d = base64_decode($pdf, true); if ($d !== false && str_starts_with($d, '%PDF')) $pdf = $d; }
+        if (str_starts_with($pdf, '%PDF')) return [$pdf, 'BD', $clave];
+    }
+    return null;
+}
+
+function no_disponible(string $msg): never
+{
+    http_response_code(404);
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!doctype html><meta charset="utf-8"><title>No disponible</title><body style="font-family:sans-serif;padding:2rem"><h3>' . htmlspecialchars($msg) . '</h3><p>No disponible.</p></body>';
+    exit;
+}
+
+function api_pdf(): never
+{
+    $tipo = (string)($_GET['tipo'] ?? ''); $num = (string)($_GET['numero'] ?? '');
+    $p = doc_pdf($tipo, $num);
+    if ($p === null) no_disponible("PDF de $tipo $num no disponible");
+    [$data, $origen, $clave] = $p;
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: inline; filename="' . ($clave ?: preg_replace('/[^A-Za-z0-9-]/', '', $num)) . '.pdf"');
+    header('Content-Length: ' . strlen($data));
+    header('X-PDF-Origen: ' . ($origen === 'BD' ? 'bd' : 'dedata'));
+    echo $data;
+    exit;
+}
+
+function api_xml(): never
+{
+    $tipo = (string)($_GET['tipo'] ?? ''); $num = (string)($_GET['numero'] ?? '');
+    $kind = ($_GET['kind'] ?? 'firmado') === 'respuesta' ? 'respuesta' : 'firmado';
+    $r = doc_row($tipo, $num);
+    if (!$r) no_disponible("Documento $tipo $num no encontrado");
+    $clave = preg_replace('/\D/', '', (string)$r['SELLO_SAT']);
+    $name = ($kind === 'respuesta' ? 'RSP_' : '') . $clave . '.xml';
+    $f = strlen($clave) === 50 ? ph_dedata_file($r['XML_PATH'], $r['FECHATIMBRADO'], $name) : null;
+    $data = $f !== null ? (string)file_get_contents($f) : '';
+    if ($data === '') {
+        $st = ph_db()->prepare('SELECT ' . ($kind === 'respuesta' ? 'XML_RESPUESTA' : 'DOCUMENTO_ELECTRONICO') . ' FROM dbo.DOC_ELECTRONICO_PROCESADO WHERE TIPO_DOC = ? AND NUMERO_DOC = ?');
+        $st->execute([$tipo, $num]);
+        $data = trim(lob($st->fetchColumn()));
+        if ($data !== '' && !str_starts_with($data, '<')) { $d = base64_decode($data, true); if ($d !== false && str_starts_with(ltrim($d), '<')) $data = $d; }
+    }
+    if ($data === '') no_disponible('XML ' . ($kind === 'respuesta' ? 'de respuesta de Hacienda' : 'firmado') . " de $tipo $num no disponible");
+    header('Content-Type: application/xml; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . ($clave ? $name : preg_replace('/[^A-Za-z0-9-]/', '', $num) . '.xml') . '"');
+    echo $data;
+    exit;
+}
+
+/* ---------------- Correccion de rutas (corte-hacienda.sql) ---------------- */
+const RUTAS_COLS = '/^(IDP_(PROD|STAG)_(CERT_URL|RUTA_CERT|FILE_CERT)|XML_PATH|PDF_PATH|TEMPLATE_PATH)$/';
+
+function rutas_plan(): array
+{
+    $sql = @file_get_contents(PH_CORTE_SQL);
+    if ($sql === false) throw new RuntimeException('No se puede leer ' . PH_CORTE_SQL);
+    if (!preg_match("/UPDATE\s+dbo\.\[COMPAÑIAS\]\s+SET(.+?)WHERE\s+CONFIGURADA\s*=\s*'SI'\s*;/su", $sql, $m)) throw new RuntimeException('No se encontro el UPDATE de COMPAÑIAS en ' . PH_CORTE_SQL);
+    preg_match_all("/(\w+)\s*=\s*'([^']*)'/u", $m[1], $mm, PREG_SET_ORDER);
+    $cols = [];
+    foreach ($mm as $x) {
+        if (!preg_match(RUTAS_COLS, $x[1])) throw new RuntimeException("Columna no permitida en el script: {$x[1]}");
+        $cols[$x[1]] = $x[2];
+    }
+    if (!$cols) throw new RuntimeException('El script no define columnas');
+    $proceso = (bool)preg_match("/UPDATE\s+dbo\.PROCESO\s+SET\s+EN_PROCESO\s*=\s*'NO'/i", $sql);
+    return [$cols, $proceso];
+}
+
+function rutas_actuales(array $cols): array
+{
+    $db = ph_db();
+    $n = (int)$db->query("SELECT COUNT(*) FROM dbo.[COMPAÑIAS] WHERE CONFIGURADA = 'SI'")->fetchColumn();
+    if ($n !== 1) throw new RuntimeException("Se esperaba 1 compañía CONFIGURADA='SI' y hay $n");
+    $r = $db->query('SELECT ' . implode(', ', array_map(fn($c) => "RTRIM([$c]) AS [$c]", array_keys($cols))) . " FROM dbo.[COMPAÑIAS] WHERE CONFIGURADA = 'SI'")->fetch(PDO::FETCH_ASSOC);
+    $r = array_map(fn($v) => $v === null ? null : ph_utf8((string)$v), $r);
+    $pr = $db->query('SELECT TOP 1 RTRIM(EN_PROCESO) FROM dbo.PROCESO')->fetchColumn();
+    return [$r, $pr === false ? null : $pr];
+}
+
+function rutas_respaldos(): array
+{
+    $f = glob(PH_DATA . '/rutas-respaldo-*.json') ?: [];
+    rsort($f);
+    return $f;
+}
+
+function api_rutas_preview(): array
+{
+    [$cols, $proceso] = rutas_plan();
+    [$act, $pr] = rutas_actuales($cols);
+    $filas = [];
+    foreach ($cols as $c => $nuevo) $filas[] = ['campo' => "COMPAÑIAS.$c", 'actual' => ph_mask((string)$act[$c]), 'nuevo' => ph_mask($nuevo), 'cambia' => trim((string)$act[$c]) !== $nuevo];
+    if ($proceso) $filas[] = ['campo' => 'PROCESO.EN_PROCESO', 'actual' => (string)$pr, 'nuevo' => 'NO', 'cambia' => trim((string)$pr) !== 'NO'];
+    $resp = rutas_respaldos();
+    $ultimo = $resp ? json_decode((string)file_get_contents($resp[0]), true) : null;
+    $info = ph_db_info();
+    return ['ok' => true, 'bd' => $info, 'script' => PH_CORTE_SQL, 'filas' => $filas,
+        'aplicado' => !array_filter($filas, fn($f) => $f['cambia']),
+        'ultimo_respaldo' => $ultimo ? ['archivo' => basename($resp[0]), 'fecha' => $ultimo['fecha'], 'usuario' => $ultimo['usuario'], 'revertido' => $ultimo['revertido'] ?? null] : null,
+        'historial' => array_slice(array_reverse(array_filter(explode("\n", (string)@file_get_contents(PH_DATA . '/acciones.log')), fn($l) => str_contains($l, 'rutas'))), 0, 10)];
+}
+
+function api_rutas_aplicar(): array
+{
+    if (($_POST['confirmar'] ?? '') !== 'APLICAR') return ['ok' => false, 'error' => 'Escriba APLICAR para confirmar'];
+    [$cols, $proceso] = rutas_plan();
+    $db = ph_db();
+    if (!is_dir(PH_DATA) && !mkdir(PH_DATA, 0700, true)) throw new RuntimeException('No se pudo crear ' . PH_DATA);
+    $db->beginTransaction();
+    try {
+        [$act, $pr] = rutas_actuales($cols);
+        $info = ph_db_info();
+        $bk = ['fecha' => date('Y-m-d H:i:s'), 'usuario' => $_SERVER['REMOTE_USER'], 'bd' => $info, 'compania' => $act, 'proceso' => $pr, 'nuevos' => $cols];
+        $file = PH_DATA . '/rutas-respaldo-' . date('Ymd-His') . '.json';
+        if (file_put_contents($file, json_encode($bk, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) === false) throw new RuntimeException('No se pudo guardar el respaldo');
+        chmod($file, 0600);
+        $set = implode(', ', array_map(fn($c) => "[$c] = ?", array_keys($cols)));
+        $u = $db->prepare("UPDATE dbo.[COMPAÑIAS] SET $set WHERE CONFIGURADA = 'SI'");
+        $u->execute(array_values($cols));
+        if ($u->rowCount() !== 1) throw new RuntimeException('UPDATE afecto ' . $u->rowCount() . ' filas (se esperaba 1)');
+        if ($proceso) $db->exec("UPDATE dbo.PROCESO SET EN_PROCESO = 'NO'");
+        $db->prepare("INSERT INTO dbo.BITACORA (SESSION_ID, TIPO, TEXTO, FECHA_HORA, DOCUMENTO, TIPO_DOCUMENTO) VALUES ('panel-hacienda', 'Info', ?, SYSDATETIME(), '', '')")
+           ->execute(['Panel: rutas Linux aplicadas (corte-hacienda.sql) por ' . $_SERVER['REMOTE_USER'] . '; respaldo ' . basename($file)]);
+        $db->commit();
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        if (isset($file) && is_file($file)) @rename($file, $file . '.fallido');
+        ph_accion_log('rutas: ERROR al aplicar: ' . $e->getMessage());
+        throw $e;
+    }
+    ph_accion_log("rutas: aplicadas en {$info['host']}/{$info['database']}; respaldo " . basename($file));
+    return ['ok' => true, 'mensaje' => 'Rutas aplicadas; respaldo ' . basename($file)] + api_rutas_preview();
+}
+
+function api_rutas_revertir(): array
+{
+    if (($_POST['confirmar'] ?? '') !== 'REVERTIR') return ['ok' => false, 'error' => 'Escriba REVERTIR para confirmar'];
+    $resp = array_values(array_filter(rutas_respaldos(), fn($f) => !(json_decode((string)file_get_contents($f), true)['revertido'] ?? null)));
+    if (!$resp) return ['ok' => false, 'error' => 'No hay respaldo pendiente de revertir'];
+    $file = $resp[0];
+    $bk = json_decode((string)file_get_contents($file), true);
+    $info = ph_db_info();
+    if (($bk['bd']['host'] ?? '') !== $info['host'] || ($bk['bd']['database'] ?? '') !== $info['database']) return ['ok' => false, 'error' => 'El respaldo es de otra base de datos'];
+    $cols = array_filter($bk['compania'], fn($c) => preg_match(RUTAS_COLS, (string)$c), ARRAY_FILTER_USE_KEY);
+    $db = ph_db();
+    $db->beginTransaction();
+    try {
+        $u = $db->prepare('UPDATE dbo.[COMPAÑIAS] SET ' . implode(', ', array_map(fn($c) => "[$c] = ?", array_keys($cols))) . " WHERE CONFIGURADA = 'SI'");
+        $u->execute(array_values($cols));
+        if ($u->rowCount() !== 1) throw new RuntimeException('UPDATE afecto ' . $u->rowCount() . ' filas');
+        if ($bk['proceso'] !== null) $db->prepare('UPDATE dbo.PROCESO SET EN_PROCESO = ?')->execute([$bk['proceso']]);
+        $db->prepare("INSERT INTO dbo.BITACORA (SESSION_ID, TIPO, TEXTO, FECHA_HORA, DOCUMENTO, TIPO_DOCUMENTO) VALUES ('panel-hacienda', 'Info', ?, SYSDATETIME(), '', '')")
+           ->execute(['Panel: rutas revertidas desde ' . basename($file) . ' por ' . $_SERVER['REMOTE_USER']]);
+        $db->commit();
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        ph_accion_log('rutas: ERROR al revertir: ' . $e->getMessage());
+        throw $e;
+    }
+    $bk['revertido'] = date('Y-m-d H:i:s') . ' por ' . $_SERVER['REMOTE_USER'];
+    file_put_contents($file, json_encode($bk, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    ph_accion_log("rutas: revertidas en {$info['host']}/{$info['database']} desde " . basename($file));
+    return ['ok' => true, 'mensaje' => 'Valores anteriores restaurados desde ' . basename($file)] + api_rutas_preview();
+}
+
+/* ---------------- Sincronizacion DEData ---------------- */
+function api_dedata_estado(): array
+{
+    $log = is_readable(PH_SYNC_LOG) ? array_slice(file(PH_SYNC_LOG, FILE_IGNORE_NEW_LINES) ?: [], -40) : [];
+    $fin = null; $ini = null;
+    foreach (array_reverse($log) as $l) { if (!$fin && str_contains($l, ' FIN ')) $fin = $l; if (!$ini && str_contains($l, ' INICIO ')) $ini = $l; }
+    $enCurso = false;
+    if ($fh = @fopen('/run/lock/paticas-dedata-sync.lock', 'r')) { $enCurso = !flock($fh, LOCK_SH | LOCK_NB); if (!$enCurso) flock($fh, LOCK_UN); fclose($fh); }
+    return ['ok' => true, 'destino' => PH_DEDATA, 'credenciales' => file_exists('/etc/lospaticas/smb-dedata.cred'), 'en_curso' => $enCurso,
+        'ultimo_inicio' => $ini, 'ultimo_fin' => $fin, 'log' => array_map('ph_mask', $log)];
+}
+
+function api_dedata_sync(): array
+{
+    if (($_POST['confirmar'] ?? '') !== '1') return ['ok' => false, 'error' => 'Falta confirmacion'];
+    $e = api_dedata_estado();
+    if ($e['en_curso']) return ['ok' => false, 'error' => 'Ya hay una sincronizacion en curso'];
+    exec('/usr/bin/sudo -n ' . PH_SYNC_BIN . ' > /dev/null 2>&1 &', $o, $rc);
+    ph_accion_log('dedata: sincronizacion iniciada');
+    usleep(1500000);
+    return ['ok' => $rc === 0, 'mensaje' => 'Sincronizacion iniciada en segundo plano'] + api_dedata_estado();
 }

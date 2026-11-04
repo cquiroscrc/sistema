@@ -30,3 +30,15 @@ Los rechazados por Hacienda no se reintentan (requieren documento nuevo / nota d
 7. Vigilar el panel (Registro en vivo / Comprobantes). Volver atrás: `systemctl disable --now paticas-hacienda-sender.timer`,
    `rm /etc/lospaticas/hacienda-sender.CORTE-REALIZADO`, rehabilitar la tarea en Windows.
 Nunca deben estar activos a la vez la tarea de Windows y el timer de .106.
+
+## DEData (XML/PDF)
+- Destino en .106: `/var/lib/lospaticas/fe/DEData` (www-data, 700/600) = `XML_PATH`/`PDF_PATH` de `corte-hacienda.sql`.
+- Sincronización incremental (sin --delete): `/usr/local/sbin/paticas-dedata-sync` (flock, log `/var/log/paticas-dedata-sync.log`,
+  config `/etc/lospaticas/dedata-sync.conf`). Con la cuenta cquiros: `.\rw.ps1 172.16.12.106 gk\dedata.sh` donde el script hace
+  `WP="$WP" /usr/local/sbin/paticas-dedata-sync`. El botón del panel usa `/etc/lospaticas/smb-dedata.cred` (root 600) si existe.
+- Los PDF también están en la BD (columna `DOC_ELECTRONICO_PROCESADO.PDF`); el panel usa el archivo de DEData si existe y si no la BD.
+
+## Rutas (pestaña "Rutas y DEData")
+Vista previa actual/nuevo, Aplicar (escribir APLICAR) en transacción con respaldo JSON en `/var/lib/lospaticas/panel/`,
+Revertir (escribir REVERTIR), historial en `/var/lib/lospaticas/panel/acciones.log` y en BITACORA. No toca el servicio ni el archivo de corte.
+Tras la restauración final de la BD en el corte hay que aplicarlo de nuevo.

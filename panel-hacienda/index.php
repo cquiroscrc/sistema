@@ -37,6 +37,7 @@ $csrf = htmlspecialchars($_SESSION['csrf']);
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabDocs" id="btnTabDocs"><i class="bi bi-file-earmark-text"></i> Comprobantes</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabCola" id="btnTabCola"><i class="bi bi-hourglass-split"></i> Cola de envío</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabSrv"><i class="bi bi-gear"></i> Servicio</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabCorte" id="btnTabCorte"><i class="bi bi-signpost-split"></i> Rutas y DEData</button></li>
  </ul>
  <div class="tab-content bg-white border border-top-0 p-3 mb-4">
 
@@ -94,6 +95,32 @@ $csrf = htmlspecialchars($_SESSION['csrf']);
    <table class="table table-sm" id="tblCola"><thead class="table-light"><tr><th>Fecha</th><th>Tipo</th><th>Documento</th><th>Cédula receptor</th><th>Estado previo</th></tr></thead><tbody></tbody></table>
   </div>
 
+
+  <!-- RUTAS Y DEDATA -->
+  <div class="tab-pane fade" id="tabCorte">
+   <div class="row g-4">
+    <div class="col-xl-7">
+     <h6><i class="bi bi-signpost-split"></i> Corrección de rutas Windows → Linux (<code>/etc/lospaticas/corte-hacienda.sql</code>)</h6>
+     <div class="alert alert-info small py-2">Actualiza en <b>dbo.COMPAÑIAS</b> las rutas del certificado, XML/PDF y plantillas para api44 en Linux, en la BD a la que apunta
+      <code>/etc/lospaticas/db.php</code> (<span id="rutasBd"></span>). Se guarda un respaldo de los valores anteriores para poder <b>Revertir</b>.
+      No inicia ni habilita el servicio de envío ni crea el archivo de corte.<br>
+      <b>Importante:</b> la restauración final de la BD en el corte sobrescribe estos valores; hay que volver a ejecutarlo después de esa restauración.</div>
+     <table class="table table-sm small" id="tblRutas"><thead class="table-light"><tr><th>Campo</th><th>Valor actual</th><th>Valor nuevo</th><th></th></tr></thead><tbody></tbody></table>
+     <div class="mb-2" id="rutasEstado"></div>
+     <button class="btn btn-primary btn-sm" id="btnRutasAplicar"><i class="bi bi-check2-square"></i> Aplicar rutas</button>
+     <button class="btn btn-outline-danger btn-sm" id="btnRutasRevertir"><i class="bi bi-arrow-counterclockwise"></i> Revertir al respaldo</button>
+     <div id="rutasMsg" class="mt-2"></div>
+     <div class="small text-muted mt-2">Historial:</div><pre class="small bg-light p-2" id="rutasHist" style="max-height:10rem;overflow:auto"></pre>
+    </div>
+    <div class="col-xl-5">
+     <h6><i class="bi bi-folder-symlink"></i> Copia de DEData (XML/PDF) desde 172.16.12.3</h6>
+     <div class="small mb-2">Destino: <code id="ddDest"></code>. Copia incremental (solo archivos nuevos o modificados; nunca borra). Script: <code>/usr/local/sbin/paticas-dedata-sync</code>.</div>
+     <div id="ddEstado" class="small mb-2"></div>
+     <button class="btn btn-primary btn-sm" id="btnSync"><i class="bi bi-arrow-repeat"></i> Sincronizar DEData</button>
+     <pre class="small bg-light p-2 mt-2" id="ddLog" style="max-height:20rem;overflow:auto"></pre>
+    </div>
+   </div>
+  </div>
   <!-- SERVICIO -->
   <div class="tab-pane fade" id="tabSrv">
    <div class="row g-3">
@@ -129,7 +156,8 @@ $csrf = htmlspecialchars($_SESSION['csrf']);
   </div>
  </div>
  <div class="modal-footer">
-  <span class="small text-muted me-auto" id="mDocMsg"></span>
+  <span class="me-auto" id="mDocLinks"></span>
+  <span class="small text-muted" id="mDocMsg"></span>
   <button class="btn btn-outline-warning btn-sm" id="btnSim"><i class="bi bi-eye"></i> Simular reintento</button>
   <button class="btn btn-warning btn-sm" id="btnRe"><i class="bi bi-arrow-repeat"></i> Reintentar</button>
  </div>
@@ -142,6 +170,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt = n => n == null ? '' : Number(n).toLocaleString('es-CR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const BADGE = {aceptado:'success', rechazado:'danger', error:'danger', pendiente:'secondary', reintentar:'warning', procesando:'info'};
+const docUrl = (a, tipo, numero, extra = {}) => 'api.php?' + new URLSearchParams({a, tipo, numero, ...extra});
 const badge = e => `<span class="badge text-bg-${BADGE[e] || 'secondary'}">${esc(e)}</span>`;
 async function api(a, params = {}, post = null) {
   const url = 'api.php?a=' + a + '&' + new URLSearchParams(params);
@@ -216,7 +245,8 @@ async function cargarDocs(p = 1) {
     <td class="text-nowrap">${esc(r.fecha)}</td><td>${esc(r.tipo)}</td><td class="text-nowrap">${esc(r.numero)}</td><td class="small">${esc(r.consecutivo)}</td>
     <td class="small text-break" style="max-width:16rem">${esc(r.clave)}</td><td class="small">${esc(r.receptor)}<br><span class="text-muted">${esc(r.email)}</span></td>
     <td class="text-end text-nowrap">${fmt(r.total)}</td><td>${badge(r.estado)}${r.error && r.estado !== 'aceptado' ? `<div class="small text-muted text-truncate" style="max-width:18rem" title="${esc(r.error)}">${esc(r.error)}</div>` : ''}</td>
-    <td class="text-nowrap"><button class="btn btn-outline-primary btn-sm" onclick="verDoc('${esc(r.tipo)}','${esc(r.numero)}')"><i class="bi bi-eye"></i> Ver</button></td></tr>`).join('') ||
+    <td class="text-nowrap"><button class="btn btn-outline-primary btn-sm" onclick="verDoc('${esc(r.tipo)}','${esc(r.numero)}')"><i class="bi bi-eye"></i> Ver</button>
+    ${r.pdf ? `<a class="btn btn-outline-danger btn-sm" target="_blank" href="${docUrl('pdf', r.tipo, r.numero)}"><i class="bi bi-file-earmark-pdf"></i> PDF</a>` : '<span class="small text-muted">PDF no disponible</span>'}</td></tr>`).join('') ||
     '<tr><td colspan="9" class="text-muted">Sin comprobantes para el filtro.</td></tr>';
   $('#docsInfo').textContent = `${j.total.toLocaleString('es-CR')} comprobantes`;
   const n = Math.ceil(j.total / j.size), pg = $('#pagDocs'); let h = '';
@@ -244,6 +274,10 @@ async function verDoc(tipo, numero) {
   $('#xmlResp').textContent = j.xml_respuesta || '(sin respuesta de Hacienda)';
   $('#respTxt').innerHTML = j.mensaje_hacienda ? `<b>DetalleMensaje:</b> ${esc(j.mensaje_hacienda)}` : esc(d.RESPUESTA_HACIENDA || '');
   $('#bitDoc').innerHTML = j.bitacora.map(r => filaLog(r)).join('') || '<tr><td class="text-muted">Sin entradas.</td></tr>';
+  const lk = (ok, href, ic, txt) => ok ? `<a class="btn btn-outline-secondary btn-sm me-1" target="_blank" href="${href}"><i class="bi bi-${ic}"></i> ${txt}</a>` : `<span class="small text-muted me-2">${txt}: no disponible</span>`;
+  $('#mDocLinks').innerHTML = lk(j.pdf, docUrl('pdf', tipo, numero), 'file-earmark-pdf', 'Ver PDF') +
+    lk(j.xml_firmado, docUrl('xml', tipo, numero, {kind: 'firmado'}), 'filetype-xml', 'XML firmado') +
+    lk(j.xml_resp, docUrl('xml', tipo, numero, {kind: 'respuesta'}), 'filetype-xml', 'XML respuesta Hacienda');
   $('#btnRe').disabled = !j.puede_reintentar || !corte; $('#btnSim').disabled = !j.puede_reintentar;
   $('#mDocMsg').textContent = j.puede_reintentar ? (corte ? '' : 'Antes del corte solo se permite simular.') : 'Reintentar solo aplica a documentos en estado "error" no enviados (los rechazados requieren un documento nuevo).';
   modal.show();
@@ -273,6 +307,48 @@ async function servicio(accion) {
 }
 $('#btnStart').addEventListener('click', () => servicio('start'));
 $('#btnStop').addEventListener('click', () => servicio('stop'));
+
+
+/* ---------- rutas ---------- */
+function pintarRutas(j) {
+  if (!j.ok) { $('#rutasMsg').innerHTML = `<div class="alert alert-danger py-1 small">${esc(j.error)}</div>`; return; }
+  $('#rutasBd').textContent = `${j.bd.host} / ${j.bd.database}`;
+  $('#tblRutas tbody').innerHTML = j.filas.map(f => `<tr class="${f.cambia ? 'table-warning' : ''}"><td><code>${esc(f.campo)}</code></td><td class="text-break">${esc(f.actual)}</td><td class="text-break">${esc(f.nuevo)}</td><td>${f.cambia ? '<span class="badge text-bg-warning">cambia</span>' : '<span class="badge text-bg-success">igual</span>'}</td></tr>`).join('');
+  const u = j.ultimo_respaldo;
+  $('#rutasEstado').innerHTML = (j.aplicado ? '<span class="badge text-bg-success">Rutas Linux aplicadas</span>' : '<span class="badge text-bg-secondary">Rutas Windows (sin aplicar)</span>') +
+    (u ? ` <span class="small text-muted">Último respaldo: ${esc(u.archivo)} (${esc(u.fecha)}, ${esc(u.usuario)})${u.revertido ? ' · revertido ' + esc(u.revertido) : ''}</span>` : '');
+  $('#btnRutasAplicar').disabled = j.aplicado;
+  $('#btnRutasRevertir').disabled = !u || !!u.revertido;
+  $('#rutasHist').textContent = (j.historial || []).join('\n') || '(sin ejecuciones)';
+}
+async function cargarRutas() { pintarRutas(await api('rutas')); }
+async function accionRutas(a, palabra, texto) {
+  const c = prompt(texto + `\n\nEscriba ${palabra} para confirmar:`); if (c !== palabra) return;
+  const j = await api(a, {}, {confirmar: c});
+  $('#rutasMsg').innerHTML = `<div class="alert alert-${j.ok ? 'success' : 'danger'} py-1 small">${esc(j.mensaje || j.error)}</div>`;
+  if (j.filas) pintarRutas(j); else cargarRutas();
+}
+$('#btnRutasAplicar').addEventListener('click', () => accionRutas('rutas_aplicar', 'APLICAR', '¿Aplicar las rutas Linux en dbo.COMPAÑIAS de la BD actual? Se guarda respaldo de los valores actuales.'));
+$('#btnRutasRevertir').addEventListener('click', () => accionRutas('rutas_revertir', 'REVERTIR', '¿Restaurar los valores anteriores desde el último respaldo?'));
+
+/* ---------- DEData ---------- */
+let ddTimer = null;
+function pintarDD(j) {
+  $('#ddDest').textContent = j.destino;
+  $('#ddEstado').innerHTML = (j.en_curso ? '<span class="badge text-bg-info">En curso…</span> ' : '') +
+    (j.credenciales ? '' : '<span class="badge text-bg-warning">Sin credenciales permanentes</span> <span class="text-muted">(el botón necesita /etc/lospaticas/smb-dedata.cred; también se puede correr con rw.ps1)</span><br>') +
+    `<b>Última:</b> ${esc(j.ultimo_fin || j.ultimo_inicio || 'nunca')}`;
+  $('#ddLog').textContent = (j.log || []).join('\n');
+  $('#btnSync').disabled = j.en_curso;
+  clearTimeout(ddTimer); if (j.en_curso) ddTimer = setTimeout(cargarDD, 5000);
+}
+async function cargarDD() { pintarDD(await api('dedata')); }
+$('#btnSync').addEventListener('click', async () => {
+  if (!confirm('¿Sincronizar DEData ahora? Solo copia archivos nuevos o modificados desde 172.16.12.3 (solo lectura).')) return;
+  const j = await api('dedata_sync', {}, {confirmar: '1'});
+  if (!j.ok) alert(j.error); if (j.log) pintarDD(j); else cargarDD();
+});
+$('#btnTabCorte').addEventListener('shown.bs.tab', () => { cargarRutas(); cargarDD(); });
 
 cargarEstado(); setInterval(() => { if (!document.hidden) cargarEstado(); }, 15000);
 cargarLogs('nuevo'); programarVivo();

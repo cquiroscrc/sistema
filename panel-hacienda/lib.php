@@ -12,6 +12,11 @@ const PH_API44       = '/var/www/lospaticas/sistema/fe/API/api44';
 const PH_SENDER_LOG  = PH_API44 . '/logs/sender.log';
 const PH_ERRORS_LOG  = '/var/www/lospaticas/sistema/fe/API/api/errors/_errors.log';
 const PH_PHP_LOG     = '/var/log/php/lospaticas-error.log';
+const PH_DEDATA      = '/var/lib/lospaticas/fe/DEData';           // XML/PDF (copia de C:\Backups\DEData y destino de api44 tras el corte)
+const PH_CORTE_SQL   = '/etc/lospaticas/corte-hacienda.sql';
+const PH_DATA        = '/var/lib/lospaticas/panel';                // respaldos JSON y bitacora de acciones del panel
+const PH_SYNC_LOG    = '/var/log/paticas-dedata-sync.log';
+const PH_SYNC_BIN    = '/usr/local/sbin/paticas-dedata-sync';
 
 if (empty($_SERVER['REMOTE_USER'])) {           // nginx debe autenticar; si no, no se sirve nada
     http_response_code(403);
@@ -56,7 +61,7 @@ function ph_utf8(?string $s): string
 /** Oculta tokens, contrasenas, PIN, cryptoKey y cabeceras Authorization. */
 function ph_mask(string $s): string
 {
-    $s = preg_replace('/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+/', 'eyJ***(token oculto)', $s);
+    $s = preg_replace('/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+/', 'eyJ***', $s);
     $s = preg_replace('/(Authorization\s*[:=]\s*)(Bearer|Basic|Token)?\s*[^\s"\',;]+/i', '$1$2 ***', $s);
     $s = preg_replace('/((?:access|refresh|id)_token|token|password|passwd|contrase(?:n|ñ)a|pwd|pin(?:P12)?|_PIN|cryptoKey|crypto_key|client_secret|secret|apikey|api_key)(["\']?\s*(?:=>|[:=])\s*["\']?)([^"\'&\s,;<]+)/iu', '$1$2***', $s);
     $s = preg_replace('/[A-Za-z0-9+\/=]{400,}/', '[base64 omitido]', $s);
@@ -153,4 +158,34 @@ function ph_tail(string $file, int $limit, ?int $before, ?int $since, callable $
         $cursor = $pos > 0 ? $pos + strlen($carry) : 0;
     }
     return [$out, $cursor, $end, $size];
+}
+
+function ph_accion_log(string $msg): void
+{
+    if (!is_dir(PH_DATA)) @mkdir(PH_DATA, 0700, true);
+    @file_put_contents(PH_DATA . '/acciones.log', date('Y-m-d H:i:s') . ' [' . ($_SERVER['REMOTE_USER'] ?? '?') . '] ' . $msg . "\n", FILE_APPEND | LOCK_EX);
+    error_log('panel-hacienda: ' . ($_SERVER['REMOTE_USER'] ?? '?') . ' ' . $msg);
+}
+
+/**
+ * Resuelve un archivo de DEData (PDF/XML) de forma segura: solo dentro de PH_DEDATA,
+ * subcarpeta AAAA/MM/DD y nombre <clave>.pdf|.xml o RSP_<clave>.xml. Sin rutas relativas.
+ */
+function ph_dedata_file(?string $dbPath, ?string $fechaTimbrado, string $name): ?string
+{
+    if (!preg_match('/^(RSP_)?\d{50}\.(pdf|xml)$/', $name)) return null;
+    $rels = [];
+    $p = str_replace('\\', '/', trim((string)$dbPath));
+    foreach (['/Backups/DEData', PH_DEDATA] as $pre) {
+        if ($p !== '' && stripos($p, $pre) !== false) { $rels[] = substr($p, stripos($p, $pre) + strlen($pre)); break; }
+    }
+    if ($fechaTimbrado && ($t = strtotime($fechaTimbrado))) $rels[] = date('/Y/m/d', $t);
+    $base = realpath(PH_DEDATA);
+    if ($base === false) return null;
+    foreach (array_unique($rels) as $rel) {
+        if (!preg_match('#^(/\d{4}/\d{2}/\d{2})?/?$#', $rel)) continue;
+        $f = realpath($base . rtrim($rel, '/') . '/' . $name);
+        if ($f !== false && str_starts_with($f, $base . '/') && is_file($f)) return $f;
+    }
+    return null;
 }
