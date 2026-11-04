@@ -1273,7 +1273,7 @@ function genXMLND()
 
     $xmlString = '<?xml version="1.0" encoding="utf-8"?>
     <NotaDebitoElectronica
-    xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.3/notaDebitoElectronica"
+    xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/notaDebitoElectronica"
     xmlns:xsd="http://www.w3.org/2001/XMLSchema"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <Clave>' . $clave . '</Clave>
@@ -1447,6 +1447,10 @@ function genXMLND()
         $xmlString .= '
         <LineaDetalle>
             <NumeroLinea>' . $l . '</NumeroLinea>';
+
+        $xmlString .= '
+            <CodigoCABYS>' . $codigoCabys . '</CodigoCABYS>';
+
         if ( isset($d->partidaArancelaria) && $d->partidaArancelaria != "" )
             $xmlString .= '<PartidaArancelaria>' . $d->partidaArancelaria . '</PartidaArancelaria>';
         
@@ -1631,13 +1635,27 @@ function genXMLND()
     $xmlString .= '
         <TotalVentaNeta>' . $totalVentasNeta . '</TotalVentaNeta>';
 
-    if ($totalImp != '')
+    if ($totalImp != ''){
         $xmlString .= '
         <TotalImpuesto>' . $totalImp . '</TotalImpuesto>';
+        $xmlString .= '<TotalDesgloseImpuesto>';
+            $xmlString .= '<Codigo>01</Codigo>';
+            $xmlString .= '<CodigoTarifaIVA>08</CodigoTarifaIVA>';
+            $xmlString .= '<TotalMontoImpuesto>'.$totalImp.'</TotalMontoImpuesto>';
+        $xmlString .= '</TotalDesgloseImpuesto>';
+
+
+    }
+
 
     if ($totalIVADevuelto != '')
         $xmlString .= '
         <TotalIVADevuelto>' . $totalIVADevuelto . '</TotalIVADevuelto>';
+        $xmlString .= '
+          <MedioPago>
+            <TipoMedioPago>01</TipoMedioPago>
+            <TotalMedioPago>'.$totalVentasNeta.'</TotalMedioPago>
+        </MedioPago>';
 
     if ( isset($totalOtrosCargos) && $totalOtrosCargos != "")
         $xmlString .= '
@@ -1710,7 +1728,7 @@ function genXMLTE()
 
     // Datos contribuyente
     $clave                          = params_get("clave");
-    $codigoActividad                = params_get("codigo_actividad");        // https://cloud-cube.s3.amazonaws.com/sp5z9nxkd1ra/public/assets/json/actividades_por_codigo.json
+    $codigoActividad                = params_get("codigo_actividad");
     $consecutivo                    = params_get("consecutivo");
     $fechaEmision                   = params_get("fecha_emision");
 
@@ -2039,7 +2057,7 @@ function genXMLTE()
                     $xmlString .= '
                     <Descuento>
                         <MontoDescuento>' . $dsc->montoDescuento . '</MontoDescuento>
-                        <NaturalezaDescuento>' . $dsc->naturalezaDescuento . '</NaturalezaDescuento>
+                        <CodigoDescento>' . $dsc->naturalezaDescuento . '</CodigoDescento>
                     </Descuento>';
             }
         }

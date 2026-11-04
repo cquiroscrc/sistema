@@ -13,3 +13,16 @@ node_modules/
 *.msi
 *.bak
 /subida_cat/
+
+# Facturacion electronica: certificados, PINs, XML/PDF generados y logs NUNCA en git
+/fe/API/api44/files/
+/fe/API/api44/logs/
+/fe/API/api44/errors/
+/fe/API/api44/.cursor/
+/fe/API/api/files/
+/fe/API/api/logs/
+/fe/API/api/errors/
+*.p12
+*.pfx
+*.pem
+*.key

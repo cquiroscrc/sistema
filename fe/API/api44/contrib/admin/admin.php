@@ -24,10 +24,11 @@ if (PHP_SAPI === 'cli') {
     include_once DOC_ROOT . "/api44/contrib/consultar/consultar.php";
     include_once DOC_ROOT . "/api44/contrib/template/template.php";
     require_once dirname(__FILE__, 5) . '/ADMIN/vendor/autoload.php';
+
     if (db_Connect()) {
-        //echo "********************************************************************************************\n";
-        //echo "    S i s t e m a   d e   E n v i o   d e   D o c u m e n t o s   E l e c t r o n i c o s     \n";
-        //echo "********************************************************************************************\n";
+        echo "********************************************************************************************\n";
+        echo "    S i s t e m a   d e   E n v i o   d e   D o c u m e n t o s   E l e c t r o n i c o s   4.4   \n";
+        echo "********************************************************************************************\n";
         echo "*************************************INICIA PROCESO****************************************\n";
         Iniciar();
         echo "*************************************TERMINA PROCESO****************************************\n";
@@ -58,7 +59,119 @@ function getDocElec()
     }
 
 }
+/**
+ * Guarda una bitacora de errores/eventos en la base de datos y muestra en consola
+ *
+ * @param string $sessionID ID de la sesión actual
+ * @param string $Texto Mensaje a registrar
+ * @param string $Documento Número de documento (opcional)
+ * @param string $TipoDoc Tipo de documento (opcional)
+ * @param string $nivel Nivel del log: Debug, Info, Warning, Error
+ * @param bool $mostrarConsola Si debe mostrar en consola o no
+ */
+function normalizarTextoBitacora(string $texto): string
+{
+    $texto = corregirEncodingUtf8($texto);
+    $texto = preg_replace('/[\r\n\t]+/', ' | ', $texto);
+    $texto = preg_replace('/\s{2,}/', ' ', $texto);
+    return trim($texto);
+}
 
+function corregirEncodingUtf8(string $texto): string
+{
+    if ($texto === '' || mb_check_encoding($texto, 'UTF-8') === false) {
+        return $texto;
+    }
+
+    if (preg_match('/Ã[\x80-\xBF¡-¿]/u', $texto)) {
+        $corregido = mb_convert_encoding($texto, 'UTF-8', 'ISO-8859-1');
+        if ($corregido !== false && mb_check_encoding($corregido, 'UTF-8')) {
+            return $corregido;
+        }
+    }
+
+    return $texto;
+}
+
+function Bitacora(
+    string $sessionID,
+    string $Texto,
+    string $Documento = "",
+    string $TipoDoc = "",
+    string $nivel = "Debug",
+    bool $mostrarConsola = true
+): bool {
+
+    // Validación de parámetros obligatorios
+    if (empty($sessionID) || empty($Texto)) {
+        return false;
+    }
+
+    // Niveles válidos
+    $nivelesValidos = ['Debug', 'Info', 'Warning', 'Error'];
+    if (!in_array($nivel, $nivelesValidos)) {
+        $nivel = 'Debug';
+    }
+
+    try {
+        global $dbConn;
+
+        // Truncar texto si es muy largo (evitar errores de BD)
+        $textoLimitado = mb_substr(normalizarTextoBitacora($Texto), 0, 4000);
+
+        // Mostrar en consola si es CLI y está habilitado
+        if ($mostrarConsola && PHP_SAPI === 'cli') {
+            $timestamp = date('d/m/Y H:i:s');
+            $docInfo = !empty($Documento) ? "|$Documento|" : "";
+            echo "[$timestamp] [$nivel] $docInfo $textoLimitado\n";
+        }
+
+        // Validar conexión a BD antes de intentar insertar
+        if (!$dbConn) {
+            error_log("Bitacora: No hay conexión a BD - SessionID: $sessionID, Texto: $textoLimitado");
+            return false;
+        }
+
+        $sql = "INSERT INTO dbo.BITACORA(SESSION_ID, TIPO, TEXTO, FECHA_HORA, DOCUMENTO, TIPO_DOCUMENTO)
+                VALUES(:sessionID, :Tipo, :Texto, SYSDATETIME(), :Documento, :TipoDoc)";
+
+        $stm = $dbConn->prepare($sql);
+
+        $resultado = $stm->execute([
+            ':sessionID' => $sessionID,
+            ':Tipo' => $nivel,
+            ':Texto' => $textoLimitado,
+            ':Documento' => $Documento,
+            ':TipoDoc' => $TipoDoc
+        ]);
+
+        return $resultado;
+
+    } catch (PDOException $ex) {
+        $errorMsg = "Bitacora PDO Error: {$ex->getMessage()} - SessionID: $sessionID, Documento: $Documento, Tipo: $TipoDoc";
+
+        // Mostrar en consola si es CLI
+        if (PHP_SAPI === 'cli') {
+            echo "[" . date('d/m/Y H:i:s') . "] [ERROR] $errorMsg\n";
+        }
+
+        // Log de sistema como respaldo
+        error_log($errorMsg);
+        grace_debug($errorMsg);
+
+        return false;
+
+    } catch (Exception $ex) {
+        $errorMsg = "Bitacora General Error: {$ex->getMessage()} - SessionID: $sessionID";
+
+        if (PHP_SAPI === 'cli') {
+            echo "[" . date('d/m/Y H:i:s') . "] [ERROR] $errorMsg\n";
+        }
+
+        error_log($errorMsg);
+        return false;
+    }
+}
 /**
  * Generates a user hash (for passwords mostly)
  * @todo Use php's function
@@ -72,38 +185,7 @@ function module_info()
 
 }
 
-/*
- *       Guarda una bitacora de errores en la base de datos
- *
- */
 
-/**
- *  Guarda en base de datos los errores
- *
- * @param string $Texto
- * @param string $Documento
- * @param string $TipoDoc
- */
-function Bitacora(string $sessionID, string $Texto, string $Documento = "", string $TipoDoc = "")
-{
-    try {
-        global $dbConn;
-        //grace_debug($Texto);
-        echo  "[" . date('d/m/Y H:i:s') . "] " ."|$Documento|". $Texto . "\n";
-        $sql = "INSERT INTO dbo.BITACORA(SESSION_ID,TIPO,TEXTO,FECHA_HORA,DOCUMENTO,TIPO_DOCUMENTO)
-                  VALUES(:sessionID,:Tipo,:Texto,SYSDATETIME(),:Documento,:TipoDoc)";
-        $stm = $dbConn->prepare($sql);
-        $stm->execute([':sessionID' => $sessionID,
-            ':Tipo' => 'Debug',
-            ':Texto' => $Texto,
-            ':Documento' => $Documento,
-            ':TipoDoc' => $TipoDoc]);
-
-    } catch (PDOException $ex) {
-        echo "Exception:" . $ex->getMessage() . " en documento " . $Documento . "de tipo " . $TipoDoc . " al insertar la bitacora" . "\n";
-        grace_debug("Exception:" . $ex->getMessage() . " en documento " . $Documento . "de tipo " . $TipoDoc . " al insertar la bitacora");
-    }
-}
 
 /**
  *       Guarda si esta en proceso un envio a hacienda
@@ -262,6 +344,58 @@ function ObtenerDatoCLIENTE(string $sessionID, string $dato, string $cliente, st
         return "ERROR";
     }
 }
+function ConvertirCIIU3ACIIU4(string $sessionID, string $codigoCIIU3, string $Documento, string $TipoDoc): string
+{
+    try {
+        // Normalizamos el código CIIU3 a 6 dígitos con ceros a la izquierda
+        $codigoCIIU3Normalizado = str_pad(trim($codigoCIIU3), 6, '0', STR_PAD_LEFT);
+
+        // Consulta SQL para obtener el código CIIU4 correspondiente
+        $sql = "
+            SELECT RIGHT(CONCAT('000000', TRIM(CAST(CODIGO_ACTIVIDAD_CIIU4 AS VARCHAR(20)))), 6) AS CODIGO_ACTIVIDAD_CIIU4 
+            FROM CODIGOS_ACTIVIDAD
+            WHERE RIGHT(CONCAT('000000', TRIM(CAST(CODIGO_ACTIVIDAD_CIIU3 AS VARCHAR(20)))), 6) ='$codigoCIIU3Normalizado'
+        ";
+
+        $result = sql_exec($sql, 1);
+
+        foreach ($result as $row) {
+            $codigoCIIU4 = $row  ?? null;
+            return is_null($codigoCIIU4) ? '' : $codigoCIIU4;
+        }
+
+        return "";
+    } catch (Exception $ex) {
+        SetContinuar(false);
+        Bitacora($sessionID, "ConvertirCIIU3ACIIU4: {$ex->getMessage()}({$ex->getLine()})", $Documento, $TipoDoc);
+        return "ERROR";
+    }
+}
+function ObtenerDatoClienteCIIU4(string $sessionID, string $dato, string $cliente, string $Documento, string $TipoDoc): string
+{
+    try {
+        // Consulta SQL para obtener el dato desde CODIGOS_ACTIVIDAD, basado en el CIIU3 del cliente
+        $sql = "
+            SELECT $dato 
+            FROM CLIENTES cli
+            LEFT JOIN CODIGOS_ACTIVIDAD ca
+                ON RIGHT('000000' + TRIM(cli.actividad_comercial), 6) = RIGHT('000000' + TRIM(ca.CODIGO_ACTIVIDAD_CIIU3), 6)
+            WHERE cli.codigo = '$cliente'
+        ";
+
+        $result = sql_exec($sql, 1);
+
+        foreach ($result as $ElDato) {
+            return is_null($ElDato) ? '' : $ElDato;
+        }
+
+        return "";
+    } catch (Exception $ex) {
+        SetContinuar(false);
+        Bitacora($sessionID, "ObtenerDatoClienteCIIU4: {$ex->getMessage()}({$ex->getLine()})", $Documento, $TipoDoc);
+        return "ERROR";
+    }
+}
 
 function setDatosEmisor(string $sessionID, string $Documento, string $TipoDoc)
 {
@@ -288,8 +422,21 @@ function setDatosEmisor(string $sessionID, string $Documento, string $TipoDoc)
         params_set("emisor_tel", getDatoCia($sessionID, "TELEFONO_1", $Documento, $TipoDoc));
         params_set("emisor_cod_pais_fax", getDatoCia($sessionID, "COD_PAIS_ISO", $Documento, $TipoDoc));
         params_set("emisor_fax", getDatoCia($sessionID, "TELEFONO_2", $Documento, $TipoDoc));
-        params_set("emisor_email", getDatoCia($sessionID, "CORREO", $Documento, $TipoDoc));
-        params_set("codigo_actividad", rtrim(getDatoCia($sessionID, "CODIGO_ACTIVIDAD", $Documento, $TipoDoc)));
+        $correo = getDatoCia($sessionID, "CORREO", $Documento, $TipoDoc);
+        // Elimina espacios al inicio/final (trim) y espacios en blanco internos si los hubiera
+        $correoLimpio = $correo ? preg_replace('/\s+/', '', trim($correo)) : '';
+
+        params_set("emisor_fax", getDatoCia($sessionID, "TELEFONO_2", $Documento, $TipoDoc));
+        params_set("emisor_email", $correoLimpio);
+
+        //$codigoCIIU3 = rtrim(getDatoCia($sessionID, "CODIGO_ACTIVIDAD_CIIU4", $Documento, $TipoDoc));
+        $codigoCIIU4 = rtrim(getDatoCia($sessionID, "CODIGO_ACTIVIDAD_CIIU4", $Documento, $TipoDoc));
+        //$codigoCIIU4 = ConvertirCIIU3ACIIU4($sessionID, $codigoCIIU3, $Documento, $TipoDoc);
+        params_set("codigo_actividad", $codigoCIIU4, $Documento, $TipoDoc);
+
+
+        //params_set("codigo_actividad", rtrim(getDatoCia($sessionID, "CODIGO_ACTIVIDAD", $Documento, $TipoDoc)));
+        params_set("proveedor_sistemas", rtrim(getDatoCia($sessionID, "NIT", $Documento, $TipoDoc)));
 
     } catch (Exception $ex) {
         SetContinuar(false);
@@ -319,8 +466,13 @@ function setDatosReceptor(string $sessionID, string $Documento, string $TipoDoc)
         params_set("receptor_tel", ObtenerDatoCLIENTE($sessionID, "telefono", $cod_cliente, $Documento, $TipoDoc));
         params_set("receptor_cod_pais_fax", ObtenerDatoCLIENTE($sessionID, "TEL_COD_PAIS_ISO", $cod_cliente, $Documento, $TipoDoc));
         params_set("receptor_fax", ObtenerDatoCLIENTE($sessionID, "celular", $cod_cliente, $Documento, $TipoDoc));
-        params_set("receptor_email", $receptor_email);
+          // Elimina espacios al inicio/final (trim) y espacios en blanco internos si los hubiera
+        $correoLimpio =$receptor_email ? preg_replace('/\s+/', '', trim($receptor_email)) : '';
+        params_set("receptor_email", $correoLimpio);
+
         params_set("receptor_gln", $receptor_gln);
+
+
 
     } catch (Exception $ex) {
         SetContinuar(false);
@@ -388,6 +540,342 @@ function getSigningTime($XML, $sessionID, $Documento, $TipoDoc)
     }
 }
 
+function obtenerFechaCalendarioDesdeTimestamp(int $timestamp): string
+{
+    return date('Y-m-d', $timestamp);
+}
+
+function obtenerFechaCalendarioHoy(): string
+{
+    return date('Y-m-d');
+}
+
+/**
+ * Detecta fechas invalidas para Hacienda antes de generar/enviar el documento.
+ * Retorna mensaje de error si debe bloquearse el envio; null si puede continuar.
+ */
+function validarFechasAntesDeProcesar(string $sessionID, string $Documento, string $TipoDoc): ?string
+{
+    $hoy = obtenerFechaCalendarioHoy();
+
+    $timestampDocumento = obtenerTimestampFechaDocumento($sessionID, $Documento, $TipoDoc);
+    if ($timestampDocumento !== null) {
+        $fechaDocumento = obtenerFechaCalendarioDesdeTimestamp($timestampDocumento);
+        if ($fechaDocumento > $hoy) {
+            return "Documento NO enviado: fechafact ($fechaDocumento) es posterior a hoy ($hoy). "
+                . "Probable cierre contable con fecha del dia siguiente. Corrija la fecha en el ERP y reintente.";
+        }
+    }
+
+    $clave = ObtenerDatoTabla($sessionID, "SAT", "V_DOCUMENTO_ELECTRONICO", "DOCUMENTO", $Documento);
+    if (!empty($clave) && $clave !== '0' && strlen($clave) >= 9) {
+        $segmentoClave = extraerSegmentoFechaClave($clave);
+        $fechaClave = formatearSegmentoFechaClave($segmentoClave);
+        $dia = substr($clave, 3, 2);
+        $mes = substr($clave, 5, 2);
+        $ano = substr($clave, 7, 2);
+        $timestampClave = strtotime("20{$ano}-{$mes}-{$dia}");
+        if ($timestampClave !== false) {
+            $fechaClaveCal = obtenerFechaCalendarioDesdeTimestamp($timestampClave);
+            if ($fechaClaveCal > $hoy) {
+                return "Documento NO enviado: la clave SAT tiene fecha $fechaClave, posterior a hoy ($hoy). "
+                    . "Corrija la clave/fecha en el ERP y reintente.";
+            }
+        }
+    }
+
+    return null;
+}
+
+function registrarDocumentoNoEnviado(string $sessionID, string $Documento, string $TipoDoc, string $motivo): void
+{
+    Bitacora($sessionID, $motivo, $Documento, $TipoDoc, "Warning");
+
+    try {
+        global $dbConn;
+        if (!$dbConn) {
+            return;
+        }
+
+        $sql = "SELECT NUMERO_DOC FROM DOC_ELECTRONICO_PROCESADO
+                WHERE NUMERO_DOC = :documento AND TIPO_DOC = :tipoDoc";
+        $stm = $dbConn->prepare($sql);
+        $stm->execute([':documento' => $Documento, ':tipoDoc' => $TipoDoc]);
+
+        if ($stm->fetchColumn()) {
+            $sqlUpdate = "UPDATE DOC_ELECTRONICO_PROCESADO SET
+                ENVIADO = 'N', ACEPTADO = 'N', ERROR_LOCAL = 'S', ERROR_HACIENDA = 'N',
+                ESTADO = 'error', ULTIMO_ERROR = :motivo
+                WHERE NUMERO_DOC = :documento AND TIPO_DOC = :tipoDoc";
+            $dbConn->prepare($sqlUpdate)->execute([
+                ':motivo' => mb_substr($motivo, 0, 500),
+                ':documento' => $Documento,
+                ':tipoDoc' => $TipoDoc,
+            ]);
+        }
+    } catch (Exception $ex) {
+        Bitacora($sessionID, "registrarDocumentoNoEnviado Error: {$ex->getMessage()}", $Documento, $TipoDoc, "Warning");
+    }
+}
+
+function resolverTimestampEmisionHacienda(string $sessionID, string $Documento, string $TipoDoc, string $clave = ''): int
+{
+    $cacheKey = 'timestamp_emision_' . $Documento . '_' . $TipoDoc;
+    $cached = params_get($cacheKey);
+    if ($cached !== null && $cached !== '' && is_numeric($cached)) {
+        return (int) $cached;
+    }
+
+    $timestampDocumento = obtenerTimestampFechaDocumento($sessionID, $Documento, $TipoDoc);
+
+    if ($timestampDocumento !== null) {
+        params_set($cacheKey, (string) $timestampDocumento);
+        return $timestampDocumento;
+    }
+
+    if (empty($clave) || $clave === '0') {
+        $clave = params_get('clave') ?? '';
+    }
+    if (empty($clave) || $clave === '0') {
+        $clave = ObtenerDatoTabla($sessionID, "SAT", "V_DOCUMENTO_ELECTRONICO", "DOCUMENTO", $Documento);
+    }
+
+    if (!empty($clave) && $clave !== '0' && strlen($clave) >= 9) {
+        $dia = substr($clave, 3, 2);
+        $mes = substr($clave, 5, 2);
+        $ano = substr($clave, 7, 2);
+        $timestamp = strtotime("20{$ano}-{$mes}-{$dia}");
+        if ($timestamp !== false) {
+            params_set($cacheKey, (string) $timestamp);
+            return $timestamp;
+        }
+    }
+
+    $timestamp = time();
+    params_set($cacheKey, (string) $timestamp);
+    return $timestamp;
+}
+
+function obtenerFechaEmisionDocumento(string $sessionID, string $Documento, string $TipoDoc): string
+{
+    $timestamp = resolverTimestampEmisionHacienda($sessionID, $Documento, $TipoDoc);
+    return date("Y-m-d\TH:i:sP", $timestamp);
+}
+
+function extraerSegmentoFechaClave(string $clave): string
+{
+    if (strlen($clave) < 9) {
+        return '';
+    }
+    return substr($clave, 3, 6);
+}
+
+function segmentoFechaClaveDesdeTimestamp(int $timestamp): string
+{
+    return date('d', $timestamp) . date('m', $timestamp) . date('y', $timestamp);
+}
+
+function actualizarSegmentoFechaEnClave(string $clave, int $timestamp): string
+{
+    if (strlen($clave) < 50) {
+        return $clave;
+    }
+    return substr($clave, 0, 3) . segmentoFechaClaveDesdeTimestamp($timestamp) . substr($clave, 9);
+}
+
+function formatearSegmentoFechaClave(string $segmento): string
+{
+    if (strlen($segmento) !== 6) {
+        return $segmento;
+    }
+    return substr($segmento, 0, 2) . '/' . substr($segmento, 2, 2) . '/20' . substr($segmento, 4, 2);
+}
+
+function obtenerTimestampFechaDocumento(string $sessionID, string $Documento, string $TipoDoc): ?int
+{
+    $fechafact = ObtenerDatoFACTURA($sessionID, 'fechafact', $Documento, $TipoDoc);
+    if (!empty($fechafact) && $fechafact !== '0') {
+        $timestamp = strtotime($fechafact);
+        if ($timestamp !== false) {
+            return $timestamp;
+        }
+    }
+
+    $fechaView = ObtenerDatoTabla($sessionID, "FECHA", "V_DOCUMENTO_ELECTRONICO", "DOCUMENTO", $Documento);
+    if (!empty($fechaView) && $fechaView !== '0') {
+        $timestamp = strtotime($fechaView);
+        if ($timestamp !== false) {
+            return $timestamp;
+        }
+    }
+
+    return null;
+}
+
+function documentoPermiteCorregirClaveEnBd(string $sessionID, string $Documento, string $TipoDoc): bool
+{
+    $sql = "SELECT ENVIADO, ACEPTADO, ULTIMO_ERROR, ESTADO
+            FROM DOC_ELECTRONICO_PROCESADO
+            WHERE NUMERO_DOC='$Documento' AND TIPO_DOC='$TipoDoc'";
+    $result = sql_exec($sql, 1, false, true);
+
+    if ($result === "-200" || empty($result)) {
+        return true;
+    }
+
+    if (!empty($result['ULTIMO_ERROR']) && stripos($result['ULTIMO_ERROR'], 'recibido anteriormente') !== false) {
+        return false;
+    }
+
+    if (($result['ACEPTADO'] ?? '') === 'S') {
+        return false;
+    }
+
+    // Ya enviado a Hacienda (aceptado o rechazado): no se corrige ni reenvia
+    if (($result['ENVIADO'] ?? '') === 'S') {
+        return false;
+    }
+
+    if (in_array(strtolower($result['ESTADO'] ?? ''), ['rechazado', 'error'], true)) {
+        return false;
+    }
+
+    return true;
+}
+
+function actualizarSatEnBd(string $sessionID, string $Documento, string $TipoDoc, string $claveNueva): bool
+{
+    global $dbConn;
+
+    $actualizado = false;
+
+    try {
+        if (!$dbConn) {
+            return false;
+        }
+
+        $tablasSat = [
+            ["HFACTURAS", "SAT", "nfac"],
+            ["HFACTURAS", "sat", "nfac"],
+            ["DOCUMENTOS", "sat", "DOCUMENTO"],
+        ];
+
+        foreach ($tablasSat as [$tabla, $columna, $filtro]) {
+            try {
+                if ($tabla === "DOCUMENTOS") {
+                    $sql = "UPDATE $tabla SET $columna = :clave
+                            WHERE $filtro = :documento AND TIPO_DOC = :tipoDoc";
+                    $stm = $dbConn->prepare($sql);
+                    $stm->execute([
+                        ':clave' => $claveNueva,
+                        ':documento' => $Documento,
+                        ':tipoDoc' => $TipoDoc,
+                    ]);
+                } else {
+                    $sql = "UPDATE $tabla SET $columna = :clave WHERE $filtro = :documento";
+                    $stm = $dbConn->prepare($sql);
+                    $stm->execute([
+                        ':clave' => $claveNueva,
+                        ':documento' => $Documento,
+                    ]);
+                }
+
+                if ($stm->rowCount() > 0) {
+                    $actualizado = true;
+                }
+            } catch (Exception $ex) {
+                continue;
+            }
+        }
+
+        $sqlProc = "SELECT NUMERO_DOC FROM DOC_ELECTRONICO_PROCESADO
+                    WHERE NUMERO_DOC = :documento AND TIPO_DOC = :tipoDoc
+                    AND (ENVIADO IS NULL OR ENVIADO = 'N') AND ACEPTADO = 'N'";
+        $stmCheck = $dbConn->prepare($sqlProc);
+        $stmCheck->execute([':documento' => $Documento, ':tipoDoc' => $TipoDoc]);
+        if ($stmCheck->fetchColumn()) {
+            $ambiente = params_get("ambiente");
+            if (empty($ambiente)) {
+                $ambiente = strtoupper(rtrim(getDatoCia($sessionID, "AMBIENTE", $Documento, $TipoDoc)));
+            }
+            $urlBase = rtrim(getDatoCia($sessionID, "API_" . $ambiente . "_URL", $Documento, $TipoDoc));
+            $linkConsulta = $urlBase . $claveNueva;
+
+            $sqlUpdateProc = "UPDATE DOC_ELECTRONICO_PROCESADO
+                              SET SELLO_SAT = :clave, LINK_CONSULTA = :linkConsulta
+                              WHERE NUMERO_DOC = :documento AND TIPO_DOC = :tipoDoc AND ACEPTADO = 'N'";
+            $stmProc = $dbConn->prepare($sqlUpdateProc);
+            $stmProc->execute([
+                ':clave' => $claveNueva,
+                ':linkConsulta' => $linkConsulta,
+                ':documento' => $Documento,
+                ':tipoDoc' => $TipoDoc,
+            ]);
+            if ($stmProc->rowCount() > 0) {
+                $actualizado = true;
+            }
+        }
+    } catch (Exception $ex) {
+        Bitacora($sessionID, "actualizarSatEnBd Error: {$ex->getMessage()}", $Documento, $TipoDoc, "Warning");
+    }
+
+    return $actualizado;
+}
+
+function validarYCorregirClaveDocumento(string $sessionID, string $Documento, string $TipoDoc, string $clave): string
+{
+    if (empty($clave) || $clave === '0' || strlen($clave) < 50) {
+        return $clave;
+    }
+
+    $timestampEmision = resolverTimestampEmisionHacienda($sessionID, $Documento, $TipoDoc, $clave);
+
+    $segmentoClave = extraerSegmentoFechaClave($clave);
+    $segmentoEmision = segmentoFechaClaveDesdeTimestamp($timestampEmision);
+
+    if ($segmentoClave === $segmentoEmision) {
+        return $clave;
+    }
+
+    if (!documentoPermiteCorregirClaveEnBd($sessionID, $Documento, $TipoDoc)) {
+        Bitacora(
+            $sessionID,
+            "Inconsistencia clave/fecha detectada (clave: " . formatearSegmentoFechaClave($segmentoClave) .
+            ", emision: " . formatearSegmentoFechaClave($segmentoEmision) .
+            ") pero el documento ya fue enviado o rechazado por Hacienda y no permite correccion",
+            $Documento,
+            $TipoDoc,
+            "Warning"
+        );
+        return $clave;
+    }
+
+    $claveCorregida = actualizarSegmentoFechaEnClave($clave, $timestampEmision);
+
+    Bitacora(
+        $sessionID,
+        "Correccion de clave: fecha en SAT era " . formatearSegmentoFechaClave($segmentoClave) .
+        ", se ajusta a fecha de emision " . formatearSegmentoFechaClave($segmentoEmision),
+        $Documento,
+        $TipoDoc,
+        "Warning"
+    );
+
+    if (actualizarSatEnBd($sessionID, $Documento, $TipoDoc, $claveCorregida)) {
+        Bitacora($sessionID, "Clave SAT actualizada en base de datos", $Documento, $TipoDoc);
+    } else {
+        Bitacora(
+            $sessionID,
+            "Clave SAT corregida en memoria para el envio; no se encontro registro actualizable en BD",
+            $Documento,
+            $TipoDoc,
+            "Warning"
+        );
+    }
+
+    return $claveCorregida;
+}
+
 function setEncabezadoDocumento(string $sessionID, string $Documento, string $TipoDoc)
 {
     try {
@@ -397,14 +885,28 @@ function setEncabezadoDocumento(string $sessionID, string $Documento, string $Ti
             //Facturas
             params_set("tipo_doc", "01");
             params_set("numero", ObtenerDatoFACTURA($sessionID, "referencia", $Documento, $TipoDoc));
-            //Fecha de Emision del documento de referencia
-            //$fechaEmision = ObtenerDatoTabla($sessionID, "fechafact", "hfacturas", "nfac", params_get("numero"));
-            $fechaEmision = date("Y-m-d\TH:i:sP");
-            params_set("fecha_emision", $fechaEmision);
 
             //Codigo de motivo
             $codigo = ObtenerDatoFACTURA($sessionID, "motivo", $Documento, $TipoDoc);
             params_set("codigo_razon" , str_pad($codigo, 2, "0",STR_PAD_LEFT));
+
+            //Consecuti de la factura, para obtener luego la referencia
+            $referencia=ObtenerDatoTabla($sessionID, "referencia", "hfacturas", "nfac", $Documento);
+            //...13055
+
+            //Documento de referencia, pero buscando por el consecutivo interno
+            $consecutivo_interno=ObtenerDatoTabla($sessionID, "nfac", "hfacturas", "consecutivo", $referencia);
+            $tipo_doc=ObtenerDatoTabla($sessionID, "tipo_doc", "DOC_ELECTRONICO_PROCESADO", "numero_doc", $consecutivo_interno);
+            $tipo_doc_referencia=$tipo_doc=="FE"?"01":"04";
+            params_set("tipo_doc_referencia" , $tipo_doc_referencia);
+
+
+            $fecha_emision_ir=ObtenerDatoTabla($sessionID, "fecha_hora", "DOC_ELECTRONICO_PROCESADO", "numero_doc", $consecutivo_interno);
+            params_set("fecha_emision_ir" , $fecha_emision_ir);
+
+            $sello_sat_50=ObtenerDatoTabla($sessionID, "sello_sat", "DOC_ELECTRONICO_PROCESADO", "numero_doc", $consecutivo_interno);
+            params_set("sello_sat_50" , $sello_sat_50);
+
             //Descripcion del motivo
             params_set("razon", ObtenerDatoTabla($sessionID, "motivo", "tbl_Motivos", "cod_motivo", $codigo));
 
@@ -412,25 +914,40 @@ function setEncabezadoDocumento(string $sessionID, string $Documento, string $Ti
 
         //Consecutivos y Tipo
         params_set('tipoDocumento', $TipoDoc);
-        params_set('clave', ObtenerDatoFACTURA($sessionID, "SAT", $Documento, $TipoDoc));
-        params_set('consecutivo', ObtenerDatoFACTURA($sessionID, 'consecutivo', $Documento, $TipoDoc));
+        $clave = ObtenerDatoTabla($sessionID, "SAT", "V_DOCUMENTO_ELECTRONICO", "DOCUMENTO", $Documento);
+        $clave = validarYCorregirClaveDocumento($sessionID, $Documento, $TipoDoc, $clave);
+        params_set('clave', $clave);
+        params_set('consecutivo', ObtenerDatoTabla($sessionID, 'CLAVE', "V_DOCUMENTO_ELECTRONICO","DOCUMENTO",$Documento));
 
-        //Fecha de Emision
-        //$fecha = date("Y-m-d\TH:i:sP", strtotime(ObtenerDatoFACTURA($sessionID, 'fechafact', $Documento, $TipoDoc)));
-        $fechaEmision = date("Y-m-d\TH:i:sP");
-        params_set("fecha_emision", $fechaEmision);
+
+
+
+        // Fecha de emision debe coincidir con la fecha embebida en la clave numerica (SAT)
+        params_set("fecha_emision", obtenerFechaEmisionDocumento($sessionID, $Documento, $TipoDoc));
 
         //Datos del cliente para definir otras codiciones
         $cod_cliente = ObtenerDatoFACTURA($sessionID, "PROVEEDOR", $Documento, $TipoDoc);
         $condicion_venta = $cod_cliente > 10000 ? "02" : "01";
-        $plazo_credito = $cod_cliente > 10000 ? "0" : ObtenerDatoCLIENTE($sessionID, "credito", $cod_cliente, $Documento, $TipoDoc);
+
+        $plazo_credito = $cod_cliente > 10000
+            ? "0"
+            : (empty(ObtenerDatoCLIENTE($sessionID, "credito", $cod_cliente, $Documento, $TipoDoc)) || ObtenerDatoCLIENTE($sessionID, "credito", $cod_cliente, $Documento, $TipoDoc) == "0"
+                ? "30"
+                : ObtenerDatoCLIENTE($sessionID, "credito", $cod_cliente, $Documento, $TipoDoc));
+
+        //Codigo de actividad del receptor
+        params_set('codigo_actividad_receptor',  ObtenerDatoCLIENTE($sessionID, "ACTIVIDAD_COMERCIAL", $cod_cliente, $Documento, $TipoDoc));
+
+        //$codigoCIIU4 = rtrim(ObtenerDatoClienteCIIU4($sessionID, 'CODIGO_ACTIVIDAD_CIIU4', $cod_cliente, $Documento, $TipoDoc));
+        //$codigoActividadReceptor = str_pad($codigoCIIU4, 6, "0", STR_PAD_LEFT);
+        //params_set('codigo_actividad_receptor',$codigoActividadReceptor);
 
         params_set("condicion_venta", $condicion_venta);
         params_set("plazo_credito", $plazo_credito);
-        params_set("medio_pago", "01");
-
+        params_set("medio_pago", ObtenerDatoFACTURA($sessionID, 'medio_pago', $Documento, $TipoDoc));
         params_set("cod_moneda", "CRC");
         params_set("tipo_cambio", 1);
+
     } catch (Exception $ex) {
         SetContinuar(false);
         Bitacora($sessionID, "SetEncabezadoDocumento Error: {$ex->getMessage()}({$ex->getLine()})", $Documento, $TipoDoc);
@@ -497,9 +1014,18 @@ function ProcesarDocumento(string $sessionID, string $Documento, string $TipoDoc
         //Define el ambiente de pruebas o produccion. Importante definirlo aca para que afecte a todos los procesos
         // despues de aqui.
         params_set("ambiente", strtoupper(rtrim(getDatoCia($sessionID, "AMBIENTE", $Documento, $TipoDoc))));
+
+        $motivoBloqueo = validarFechasAntesDeProcesar($sessionID, $Documento, $TipoDoc);
+        if ($motivoBloqueo !== null) {
+            registrarDocumentoNoEnviado($sessionID, $Documento, $TipoDoc, $motivoBloqueo);
+            SetContinuar(false);
+            return;
+        }
+
         //Creacion del XML
         Bitacora($sessionID, "Creando XML", $Documento, $TipoDoc);
         $xml = IniciaProcesoCreacionXML($sessionID, $Documento, $TipoDoc);
+
         if (!$continuar) {
             Bitacora($sessionID, "El proceso se detuvo en la creacion del XML", $Documento, $TipoDoc);
             return;
@@ -519,7 +1045,7 @@ function ProcesarDocumento(string $sessionID, string $Documento, string $TipoDoc
         $result = sql_exec($sql, 2, false, true);
         if ($result !== "-200") {
             if ($result[0]["DIF_MINS"] > ($TIEMPO_EXPIRA_DOCHA_HORAS * 60)) {
-                Bitacora($sessionID, "El documento $Documento NO sera procesado, ha pasado las $TIEMPO_EXPIRA_DOCHA_HORAS horas limite para enviarlo", $Documento, $TipoDoc);
+                //Bitacora($sessionID, "El documento $Documento NO sera procesado, ha pasado las $TIEMPO_EXPIRA_DOCHA_HORAS horas limite para enviarlo", $Documento, $TipoDoc);
                 //@todo Poner aca un return al terminar debugging
                 //return;
             }
@@ -708,8 +1234,8 @@ function IniciarProcesoToken($sessionID, $Documento, $TipoDoc)
 function IniciarEnvioDocumentoHacienda($xmlFirmado, $sessionID, $Documento, $TipoDoc)
 {
     try {
-        $TiempoActual = date("Y-m-d\TH:i:sP");
-        params_set('fecha', $TiempoActual);
+        $fechaEmision = params_get('fecha_emision');
+        params_set('fecha', !empty($fechaEmision) ? $fechaEmision : date("Y-m-d\TH:i:sP"));
 
         params_set('emi_tipoIdentificacion', params_get("emisor_tipo_identif"));
         params_set('emi_numeroIdentificacion', params_get("emisor_num_identif"));
@@ -876,44 +1402,86 @@ para recibir este códigoes enviar dos o más veces la misma clave. Apartir de l
 function Procesa400($respuesta, $sessionID, $XMLFirmado, $Documento, $TipoDoc)
 {
     try {
-
-        // Consulta el documento y obtiene varios datos del mismo para proceder a saber porque el error 400 sucedio
         ConsultarDocumento($respuesta, $XMLFirmado, $sessionID, $Documento, $TipoDoc);
+
         $xmlRespuesta = params_get("xmlRespuesta");
-        $ind_estado = params_get("ind_estado");
+        $ind_estado   = params_get("ind_estado");
+        $clave        = params_get("clave");
+        $fecha_timbrado = params_get("fecha_timbrado");
 
-        //Al menos en la consulta obtuvimos una causa del error y fue diferente a la primera vez que enviamos
-        // el documento, pero puede ser que venga vacio
-        if (strlen(params_get("x_error_cause")) > 0) {
-            $x_error_cause = params_get("x_error_cause");
+        // Obtener causa del error de forma segura
+        $x_error_cause = params_get("x_error_cause");
+        if (empty($x_error_cause)) {
+            $x_error_cause = $respuesta['text'][9] ??
+                $respuesta['message'] ??
+                $respuesta['error'] ??
+                json_encode($respuesta) ?? 'Error desconocido';
         }
 
-        Bitacora($sessionID, "$x_error_cause, estado: $ind_estado", $Documento, $TipoDoc);
-        //Si ya fue recibido por hacienda hay que consultar por el estado de recibido para proceder a
-        //actualizar la base de datos de acuerdo a la respuesta que nos devuelva hacienda
-        if (!empty($ind_estado) or strlen($ind_estado) > 0) {
-            if ($ind_estado == "aceptado") {
-                UpdateInsert("S", "N", "S", "N", "El documento fue aceptado", $ind_estado, $XMLFirmado["xmlFirmado"], $xmlRespuesta, $sessionID, $Documento, $TipoDoc);
-            } elseif ($ind_estado == "rechazado") {
-                UpdateInsert("S", "N", "S", "S", "El documento fue rechazado($x_error_cause)", $ind_estado, $XMLFirmado["xmlFirmado"], $xmlRespuesta, $sessionID, $Documento, $TipoDoc);
-            } elseif ($ind_estado == "procesando") {
-                UpdateInsert("N", "N", "S", "S", "El documento se esta procesando", $ind_estado, $XMLFirmado["xmlFirmado"], $xmlRespuesta, $sessionID, $Documento, $TipoDoc);
-            } else { //Otro error , no hay XML de respuesta y tampoco estado
-                UpdateInsert("N", "N", "N", "S", "El documento tiene el siguiente error: $x_error_cause", "error", $XMLFirmado, null, $sessionID, $Documento, $TipoDoc);
+        Bitacora($sessionID, "$x_error_cause | estado: $ind_estado", $Documento, $TipoDoc);
+
+        // Procesar según el estado devuelto por Hacienda
+        if (!empty($ind_estado)) {
+            switch ($ind_estado) {
+                case "aceptado":
+                    UpdateInsert("S", "N", "S", "N", "El documento fue aceptado",
+                        $ind_estado, $XMLFirmado["xmlFirmado"] ?? $XMLFirmado,
+                        $xmlRespuesta, $sessionID, $Documento, $TipoDoc);
+                    break;
+
+                case "rechazado":
+                    UpdateInsert("S", "N", "S", "S", "El documento fue rechazado ($x_error_cause)",
+                        $ind_estado, $XMLFirmado["xmlFirmado"] ?? $XMLFirmado,
+                        $xmlRespuesta, $sessionID, $Documento, $TipoDoc);
+                    break;
+
+                case "procesando":
+                    UpdateInsert("N", "N", "S", "S", "El documento se está procesando",
+                        $ind_estado, $XMLFirmado["xmlFirmado"] ?? $XMLFirmado,
+                        $xmlRespuesta, $sessionID, $Documento, $TipoDoc);
+                    break;
+
+                default:
+                    UpdateInsert("N", "N", "N", "S",
+                        "El documento tiene el siguiente error: $x_error_cause",
+                        "error", $XMLFirmado["xmlFirmado"] ?? $XMLFirmado,
+                        $xmlRespuesta, $sessionID, $Documento, $TipoDoc);
+                    break;
             }
-        }
-        //Intenta salvar el documento en el disco en ruta segun settings.php
-        if (!empty($xmlRespuesta)) {
-            saveFile("RSP_" . params_get("clave") . ".xml", base64_decode($xmlRespuesta), "XML", params_get("fecha_timbrado"), $Documento, $TipoDoc, $sessionID);
         } else {
-            Bitacora($sessionID, "No se logro  obtener un XML de respuesta de hacienda para guardarla", $Documento, $TipoDoc);
-            UpdateInsert("N", "N", "N", "S", "No se logro  obtener un XML de respuesta de hacienda para guardarla ", $ind_estado, $XMLFirmado["xmlFirmado"], $xmlRespuesta, $sessionID, $Documento, $TipoDoc);
+            // No hay estado → error genérico
+            UpdateInsert("N", "N", "N", "S",
+                "Error 400 sin estado devuelto: $x_error_cause",
+                "error", $XMLFirmado["xmlFirmado"] ?? $XMLFirmado,
+                null, $sessionID, $Documento, $TipoDoc);
         }
+
+        // Guardar XML de respuesta
+        if (!empty($xmlRespuesta)) {
+            saveFile(
+                "RSP_" . $clave . ".xml",
+                base64_decode($xmlRespuesta),
+                "XML",
+                $fecha_timbrado,
+                $Documento,
+                $TipoDoc,
+                $sessionID
+            );
+        } else {
+            Bitacora($sessionID, "No se obtuvo XML de respuesta de Hacienda", $Documento, $TipoDoc);
+            UpdateInsert("N", "N", "N", "S",
+                "No se logro obtener un XML de respuesta de hacienda",
+                $ind_estado ?? "error",
+                $XMLFirmado["xmlFirmado"] ?? $XMLFirmado,
+                null, $sessionID, $Documento, $TipoDoc);
+        }
+
     } catch (Exception $ex) {
         SetContinuar(false);
-        Bitacora($sessionID, "Procesa400 Error: {$ex->getMessage()}", $Documento, $TipoDoc);
+        Bitacora($sessionID, "Procesa400 Error: " . $ex->getMessage(), $Documento, $TipoDoc);
+        // Opcional: loggear también el trace
+         Bitacora($sessionID, $ex->getTraceAsString(), $Documento, $TipoDoc);
     }
-
 }
 
 function GuardarRespuestaHacienda($sessionID, $xmlRespuesta, $Documento, $TipoDoc)
@@ -922,38 +1490,108 @@ function GuardarRespuestaHacienda($sessionID, $xmlRespuesta, $Documento, $TipoDo
         global $dbConn;
 
         if (strlen($xmlRespuesta) > 0) {
-
             $xml = simplexml_load_string($xmlRespuesta, "SimpleXMLElement", LIBXML_NOCDATA);
             $json = json_encode($xml);
             $array = json_decode($json, true);
-            
+
             if (!empty($array)) {
                 $mensaje = $array["Mensaje"];
-                if($mensaje=="1")
-                {
-                    $detalle_mensaje = "Aceptado";
+                $detalle_mensaje = interpretarCodigoMensaje($mensaje);
+
+                if ($mensaje != "1" && !empty($array["DetalleMensaje"])) {
+                    $detalleCompleto = procesarDetalleMensaje($array["DetalleMensaje"]);
+                    if (!empty($detalleCompleto)) {
+                        $detalle_mensaje .= " - " . $detalleCompleto;
+                    }
                 }
-                else{
-                    $detalle_mensaje=$array["DetalleMensaje"];
-                }   
+
                 $resp = "Mensaje=$mensaje, Detalle:$detalle_mensaje";
+
                 $sql = "UPDATE DOC_ELECTRONICO_PROCESADO SET
-                    RESPUESTA_HACIENDA=:resp ,XML_RESPUESTA=:xmlRespuesta
+                    RESPUESTA_HACIENDA=:resp, XML_RESPUESTA=:xmlRespuesta
                     WHERE NUMERO_DOC=:Documento and TIPO_DOC=:TipoDoc";
+
                 $stm = $dbConn->prepare($sql);
-                $stm->execute([':resp' => $resp, ':xmlRespuesta' => $xmlRespuesta,
-                    ':Documento' => $Documento, ':TipoDoc' => $TipoDoc]);
-                Bitacora($sessionID, "Respuesta de hacienda obtenida($mensaje), se aplica al documento.", $Documento, $TipoDoc);
+                $stm->execute([
+                    ':resp' => $resp,
+                    ':xmlRespuesta' => $xmlRespuesta,
+                    ':Documento' => $Documento,
+                    ':TipoDoc' => $TipoDoc
+                ]);
+
+                Bitacora($sessionID, "El documento ha sido $detalle_mensaje", $Documento, $TipoDoc);
             }
         } else {
-            Bitacora($sessionID, "No hay respuesta de hacienda.El documento se intentará enviar luego", $Documento, $TipoDoc);
+            Bitacora($sessionID, "No hay respuesta de hacienda. El documento se intentará enviar luego", $Documento, $TipoDoc);
         }
     } catch (Exception $ex) {
         SetContinuar(false);
         Bitacora($sessionID, "GuardarRespuestaHacienda Error: {$ex->getMessage()}", $Documento, $TipoDoc);
     }
 }
+function procesarDetalleMensaje(string $detalleMensaje): string
+{
+    $detalleMensaje = corregirEncodingUtf8($detalleMensaje);
 
+    $contiene = function($texto, $buscar) {
+        return strpos($texto, $buscar) !== false;
+    };
+
+    if (!$contiene($detalleMensaje, '[')) {
+        return normalizarTextoBitacora($detalleMensaje);
+    }
+
+    try {
+        $inicioArray = strpos($detalleMensaje, '[');
+        $finArray = strrpos($detalleMensaje, ']');
+
+        if ($inicioArray === false || $finArray === false) {
+            return normalizarTextoBitacora($detalleMensaje);
+        }
+
+        $preambulo = trim(substr($detalleMensaje, 0, $inicioArray));
+        $arrayErrores = substr($detalleMensaje, $inicioArray + 1, $finArray - $inicioArray - 1);
+
+        $lineas = preg_split('/\R/', $arrayErrores);
+        $erroresFormateados = [];
+
+        foreach ($lineas as $linea) {
+            $linea = trim($linea);
+            if (empty($linea) || $contiene($linea, 'codigo, mensaje, fila, columna')) {
+                continue;
+            }
+
+            if (preg_match('/^(-?\d+),\s*"?"?([^"]+)"?"?,\s*(\d+),\s*(\d+)/', $linea, $matches)) {
+                $codigo = $matches[1];
+                $mensaje = trim($matches[2]);
+                $fila = $matches[3];
+                $columna = $matches[4];
+
+                $errorFormateado = "Error $codigo: $mensaje";
+                if ($fila > 0 || $columna > 0) {
+                    $errorFormateado .= " (Linea: $fila, Columna: $columna)";
+                }
+                $erroresFormateados[] = $errorFormateado;
+            } elseif (!empty($linea)) {
+                $erroresFormateados[] = normalizarTextoBitacora($linea);
+            }
+        }
+
+        if (!empty($erroresFormateados)) {
+            $partes = [];
+            if (!empty($preambulo)) {
+                $partes[] = $preambulo;
+            }
+            $partes = array_merge($partes, $erroresFormateados);
+            return implode(' | ', $partes);
+        }
+
+        return normalizarTextoBitacora($detalleMensaje);
+
+    } catch (Exception $e) {
+        return normalizarTextoBitacora($detalleMensaje);
+    }
+}
 /*Este sería un error no esperado en la plataforma. Se recomienda esperar un periodo de tiempo razonable 4
 para descartar que se trate de un problema de disponibilidad de la plataforma. De persistir el problema de manera
 general, se debe abrir un caso a la mesa de soporte del Ministerio de Hacienda.
@@ -990,63 +1628,130 @@ function ObtenerTotalesDeXML($XMLFirmado, $sessionID, $Documento, $TipoDoc)
     }
 }
 
+function extraerClaveDeMensajeHacienda(string $mensaje): string
+{
+    if (preg_match('/\[(\d{50})\]/', $mensaje, $matches)) {
+        return $matches[1];
+    }
+    return '';
+}
+
+function construirUrlConsultaPorClave(string $sessionID, string $Documento, string $TipoDoc, string $clave): string
+{
+    if (empty($clave)) {
+        return '';
+    }
+
+    $ambiente = params_get("ambiente");
+    if (empty($ambiente)) {
+        $ambiente = strtoupper(rtrim(getDatoCia($sessionID, "AMBIENTE", $Documento, $TipoDoc)));
+    }
+
+    $urlConsulta = getDatoCia($sessionID, "API_" . $ambiente . "_URL", $Documento, $TipoDoc);
+    return rtrim($urlConsulta) . $clave;
+}
+
+function aplicarRespuestaConsultaHacienda($jsonRespuesta, string $sessionID, string $Documento, string $TipoDoc): bool
+{
+    if (empty($jsonRespuesta)) {
+        return false;
+    }
+
+    if (!empty($jsonRespuesta->{"Status"}) && (string) $jsonRespuesta->{"Status"} === "400") {
+        $causa = $jsonRespuesta->text->{"X-Error-Cause"} ?? 'Documento no encontrado en Hacienda';
+        Bitacora($sessionID, $causa, $Documento, $TipoDoc);
+        return false;
+    }
+
+    if (!empty($jsonRespuesta->{"message"})) {
+        Bitacora($sessionID, "Error al consultar: " . $jsonRespuesta->{"message"}, $Documento, $TipoDoc);
+        return false;
+    }
+
+    params_set("ind_estado", $jsonRespuesta->{"ind-estado"} ?? null);
+    params_set("xmlRespuesta", $jsonRespuesta->{"respuesta-xml"} ?? null);
+
+    return !empty($jsonRespuesta->{"ind-estado"}) || !empty($jsonRespuesta->{"respuesta-xml"});
+}
+
+function resolverUrlConsultaHacienda(array $respuesta, string $sessionID, string $Documento, string $TipoDoc, string $x_error_cause): string
+{
+    $header_location = "";
+    foreach ($respuesta["text"] as $textpart) {
+        if (stripos($textpart, 'location:') !== false) {
+            $header_location = $textpart;
+            break;
+        }
+    }
+
+    if (strlen($header_location) > 0) {
+        $partes = preg_split('/location:/i', $header_location, 2);
+        if (!empty($partes[1]) && preg_match('/https:\/\/[^\s]+/', $partes[1], $matches)) {
+            return rtrim($matches[0]);
+        }
+    }
+
+    $clave = params_get('clave');
+    if (empty($clave)) {
+        $clave = extraerClaveDeMensajeHacienda($x_error_cause);
+    }
+
+    if (!empty($clave)) {
+        params_set('clave', $clave);
+        return construirUrlConsultaPorClave($sessionID, $Documento, $TipoDoc, $clave);
+    }
+
+    return '';
+}
+
 /*
  *  Obtiene datos del documento luego de enviarlo
  *  $respuesta , es la respuesta del envio inicial
  * */
-function ConsultarDocumento($respuesta, $sessionID, $Documento, $TipoDoc)
+function ConsultarDocumento($respuesta, $XMLFirmado, $sessionID, $Documento, $TipoDoc)
 {
 
     try {
-        $header_location = "";
         $error_cause = "";
         $x_error_cause = "";
-        $apiURLConsulta = "";
-        //*****************************CONSULTAR POR DOCUMENTO***************************
-        foreach ($respuesta["text"] as $textpart) {
-            if (strpos($textpart, 'Location') !== false) {
-                $header_location = $textpart;
-            }
-            if (strpos($textpart, 'X-Error-Cause:') !== false) {
-                $error_cause = $textpart;
+
+        if (!empty($respuesta["text"]) && is_array($respuesta["text"])) {
+            foreach ($respuesta["text"] as $textpart) {
+                if (stripos($textpart, 'x-error-cause:') !== false) {
+                    $error_cause = $textpart;
+                    break;
+                }
             }
         }
+
         if (strlen($error_cause) > 0) {
-            $x_error_cause = explode('X-Error-Cause:', $error_cause)[1];
+            $partesError = preg_split('/x-error-cause:/i', $error_cause, 2);
+            $x_error_cause = trim($partesError[1] ?? '');
         }
 
-        if (strlen($header_location) > 0) {
-            $strURL = explode("location:", $header_location);
+        if (empty($x_error_cause)) {
+            $x_error_cause = params_get("x_error_cause") ?? '';
         }
 
-        if (!empty($strURL)) {
-            $apiURLConsulta = ltrim(rtrim($strURL[0]));
-        } else {
-            $apiURLConsulta = "error";
-        }
+        params_set("x_error_cause", $x_error_cause);
 
-        if ($apiURLConsulta != "error") {
-            if (preg_match('/https:\/\/[^\s]+/', $apiURLConsulta, $matches)) {
-                $cleanURL = rtrim($matches[0]);
-                params_set("api_url", $cleanURL);
+        $apiURLConsulta = resolverUrlConsultaHacienda($respuesta, $sessionID, $Documento, $TipoDoc, $x_error_cause);
+
+        if (empty($apiURLConsulta)) {
+            if (stripos($x_error_cause, 'recibido anteriormente') !== false) {
+                Bitacora($sessionID, "No se pudo construir URL de consulta para comprobante ya recibido: $x_error_cause", $Documento, $TipoDoc);
             }
-            params_set("x_error_cause", $x_error_cause);
-
-            //Esta es la respuesta despues de consultar
-            $jsonRespuesta = json_decode(consultar());
-
-            if (isset($jsonRespuesta->{"ind-estado"})) {
-                params_set("ind_estado", $jsonRespuesta->{"ind-estado"});
-            } else {
-                params_set("ind_estado", null);
-            }
-
-            if (isset($jsonRespuesta->{"respuesta-xml"})) {
-                params_set("xmlRespuesta", $jsonRespuesta->{"respuesta-xml"});
-            } else {
-                params_set("xmlRespuesta", null);
-            }
+            return;
         }
+
+        params_set("api_url", $apiURLConsulta);
+
+        if (stripos($x_error_cause, 'recibido anteriormente') !== false) {
+            Bitacora($sessionID, "Consultando comprobante previamente recibido en Hacienda", $Documento, $TipoDoc);
+        }
+
+        $jsonRespuesta = json_decode(consultar());
+        aplicarRespuestaConsultaHacienda($jsonRespuesta, $sessionID, $Documento, $TipoDoc);
     } catch (Exception $ex) {
         SetContinuar(false);
         Bitacora($sessionID, "ConsultarDocumento Error: {$ex->getMessage()} ({$ex->getLine()})", $Documento, $TipoDoc);
@@ -1075,29 +1780,8 @@ function ConsultarDirecto($sessionID, $Documento, $TipoDoc)
             //Esta es la respuesta despues de consultar
 
             $jsonRespuesta = json_decode(consultar());
-            //  print_r($jsonRespuesta);
-            if (!empty($jsonRespuesta->{"Status"})) {
-                if ($jsonRespuesta->{"Status"} == "400") {
-                    //No se ha encontrado el documento
-                    $header = $jsonRespuesta->text;
-                    Bitacora($sessionID, $header->{"X-Error-Cause"}, $Documento, $TipoDoc);
-                    return;
-                }
-            }
-            if (!empty($jsonRespuesta->{"message"})) {
-                Bitacora($sessionID, "Error al consultar:" . $jsonRespuesta->{"message"}, $Documento, $TipoDoc);
-            }
-
-            if (!empty($jsonRespuesta->{"ind-estado"})) {
-                params_set("ind_estado", $jsonRespuesta->{"ind-estado"});
-            } else {
-                params_set("ind_estado", null);
-            }
-
-            if (!empty($jsonRespuesta->{"respuesta-xml"})) {
-                params_set("xmlRespuesta", $jsonRespuesta->{"respuesta-xml"});
-            } else {
-                params_set("xmlRespuesta", null);
+            if (!aplicarRespuestaConsultaHacienda($jsonRespuesta, $sessionID, $Documento, $TipoDoc)) {
+                return;
             }
             $ind_estado = params_get("ind_estado");
             $xmlRespuesta = params_get("xmlRespuesta");
@@ -1169,7 +1853,7 @@ function ProcesaResultadoEnvio($respuesta, $sessionID, $XMLFirmado, $Documento, 
                     break; // Salir del bucle una vez encontrado
                 }
             }
-            Bitacora($sessionID, "Ha ocurrido un error al enviar el documento($error), causa:{$x_error_cause}");
+            //Bitacora($sessionID, "{$x_error_cause}");
             Procesa400($respuesta, $sessionID, $XMLFirmado, $Documento, $TipoDoc, $XMLFirmado);
         }
 
@@ -1305,19 +1989,60 @@ function UpdateInsert($Aceptado, $ErrorLocal, $Enviado, $ErrorHacienda, $UltimoE
                     :EmailEnviado,:estado_comprobante,:pdf_path,:xml_path)";
             try {
                 $stm = $dbConn->prepare($sql);
-                $stm->execute([':TipoDoc' => $TipoDoc, ':Documento' => $Documento, ':emisor_num_identif' => $emisor_num_identif,
-                    ':emisor_email' => $emisor_email, ':emisor_gln' => $emisor_gln, ':fecha_timbrado' => $fecha_timbrado,
-                    ':receptor_nit' => $receptor_nit, ':receptor_email' => $receptor_email, ':receptor_gln' => $receptor_gln,
-                    ':Enviado' => $Enviado, ':Aceptado' => $Aceptado, ':Estado' => $Estado,
-                    ':XML' => $XML, ':LinkConsulta' => $LinkConsulta, ':clave' => $clave,
-                    ':fecha_emision' => $fecha_emision, ':UltimoError' => $UltimoError, ':XMLRespuesta' => $XMLRespuesta,
-                    ':TotalServGravados' => $Totales->TotalServGravados, ':TotalServExentos' => $Totales->TotalServExentos,
-                    ':TotalServExonerado' => $Totales->TotalServExonerado, ':TotalMercanciasGravadas' => $Totales->TotalMercanciasGravadas,
-                    ':TotalMercanciasExentas' => $Totales->TotalMercanciasExentas, ':TotalMercExonerada' => $Totales->TotalMercExonerada, ':TotalGravado' => $Totales->TotalGravado,
-                    ':TotalExento' => $Totales->TotalExento, ':TotalExonerado' => $Totales->TotalExonerado, ':TotalVenta' => $Totales->TotalVenta,
-                    ':TotalDescuentos' => $Totales->TotalDescuentos, ':TotalVentaNeta' => $Totales->TotalVentaNeta, ':TotalImpuesto' => $Totales->TotalImpuesto,
-                    ':TotalComprobante' => $Totales->TotalComprobante, ':TotalIVADevuelto' => $Totales->TotalIVADevuelto, ':TotalOtrosCargos' => $Totales->TotalOtrosCargos,
-                    ':EmailEnviado' => 'NO', ':estado_comprobante' => $estado_comprobante, ':pdf_path' => $pdf_path, ':xml_path' => $xml_path]);
+                // Validar y limpiar datos antes del execute
+                $executeData = [
+                    ':TipoDoc' => $TipoDoc ?? '',
+                    ':Documento' => $Documento ?? '',
+                    ':emisor_num_identif' => $emisor_num_identif ?? '',
+                    ':emisor_email' => $emisor_email ?? '',
+                    ':emisor_gln' => $emisor_gln ?? '',
+                    ':fecha_timbrado' => $fecha_timbrado ?? date('Y-m-d H:i:s'),
+                    ':receptor_nit' => $receptor_nit ?? '',
+                    ':receptor_email' => $receptor_email ?? '',
+                    ':receptor_gln' => $receptor_gln ?? '',
+                    ':Enviado' => $Enviado ?? 'N',
+                    ':Aceptado' => $Aceptado ?? 'N',
+                    ':Estado' => $Estado ?? '',
+                    ':XML' => $XML ?? '',
+                    ':LinkConsulta' => $LinkConsulta ?? '',
+                    ':clave' => $clave ?? '',
+                    ':fecha_emision' => $fecha_emision ?? date('Y-m-d H:i:s'),
+                    ':UltimoError' => $UltimoError ?? '',
+                    ':XMLRespuesta' => $XMLRespuesta ?? '',
+                    ':TotalServGravados' => $Totales->TotalServGravados ?? 0.00,
+                    ':TotalServExentos' => $Totales->TotalServExentos ?? 0.00,
+                    ':TotalServExonerado' => $Totales->TotalServExonerado ?? 0.00,
+                    ':TotalMercanciasGravadas' => $Totales->TotalMercanciasGravadas ?? 0.00,
+                    ':TotalMercanciasExentas' => $Totales->TotalMercanciasExentas ?? 0.00,
+                    ':TotalMercExonerada' => $Totales->TotalMercExonerada ?? 0.00,
+                    ':TotalGravado' => $Totales->TotalGravado ?? 0.00,
+                    ':TotalExento' => $Totales->TotalExento ?? 0.00,
+                    ':TotalExonerado' => $Totales->TotalExonerado ?? 0.00,
+                    ':TotalVenta' => $Totales->TotalVenta ?? 0.00,
+                    ':TotalDescuentos' => $Totales->TotalDescuentos ?? 0.00,
+                    ':TotalVentaNeta' => $Totales->TotalVentaNeta ?? 0.00,
+                    ':TotalImpuesto' => $Totales->TotalImpuesto ?? 0.00,
+                    ':TotalComprobante' => $Totales->TotalComprobante ?? 0.00,
+                    ':TotalIVADevuelto' => $Totales->TotalIVADevuelto ?? 0.00,
+                    ':TotalOtrosCargos' => $Totales->TotalOtrosCargos ?? 0.00,
+                    ':EmailEnviado' => 'NO',
+                    ':estado_comprobante' => $estado_comprobante ?? '0',
+                    ':pdf_path' => $pdf_path ?? '',
+                    ':xml_path' => $xml_path ?? ''
+                ];
+                foreach ($executeData as $key => $value) {
+                    if (is_null($value)) {
+                        Bitacora($sessionID, "Valor NULL detectado para parámetro: $key", $Documento, $TipoDoc, "Warning");
+                    }
+                }
+
+                $resultado = $stm->execute($executeData);
+
+                if (!$resultado) {
+                    $errorInfo = $stm->errorInfo();
+                    Bitacora($sessionID, "Execute falló - SQLSTATE: {$errorInfo[0]}, Error: {$errorInfo[2]}", $Documento, $TipoDoc, "Error");
+                }
+
             } catch (PDOException $ex) {
                 Bitacora($sessionID, "UpdateInsert Error: {$ex->getMessage()}", $Documento, $TipoDoc);
             }
@@ -1330,6 +2055,22 @@ function UpdateInsert($Aceptado, $ErrorLocal, $Enviado, $ErrorHacienda, $UltimoE
     }
 }
 
+/**
+ * Interpreta los códigos de mensaje según XSLT de Hacienda
+ *
+ * @param string $codigo Código numérico del mensaje
+ * @return string Descripción del mensaje
+ */
+function interpretarCodigoMensaje(string $codigo): string
+{
+    $codigos = [
+        "1" => "Aceptado",
+        "2" => "Aceptado Parcialmente",
+        "3" => "Rechazado"
+    ];
+
+    return $codigos[$codigo] ?? "Código desconocido ($codigo)";
+}
 function ObtenerTotalExoneraciones($sessionID, $Documento, $TipoDoc, $Tipo)
 {
 
@@ -1674,7 +2415,7 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
 
             $clave = ObtenerDatoTabla($sessionID, "SELLO_SAT", "DOC_ELECTRONICO_PROCESADO", "NUMERO_DOC", "$Documento");
             if ($clave == "0") {
-                Bitacora($sessionID, "El no tiene una clave asignada", $Documento, $TipoDoc);
+                Bitacora($sessionID, "El documento no tiene una clave asignada", $Documento, $TipoDoc);
                 return;
             }
             $fecha_timbrado=$correo["FECHATIMBRADO"];
@@ -1717,13 +2458,21 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
                     if (!empty($fecha_timbrado) and !empty($xmlRespuesta)) {
                         saveFile("RSP_" . $clave . ".xml", $xmlRespuesta, "XML", $fecha_timbrado, $Documento, $TipoDoc, $sessionID);
                         Bitacora($sessionID, "XML Respuesta creado a partir de la base de datos", $Documento, $TipoDoc);
-                        $existe_rsp = true;
+                        $existe_rsp = file_exists($directory_xml . "/" . $xml_resp_filename);
                     }
 
                 }
             }
             if (!$existe_pdf){
-                GenerarPDF($sessionID,$Documento,$TipoDoc);
+                $strPDF = GenerarPDF($sessionID, $Documento, $TipoDoc);
+                //Intenta salvar el documento en el disco en ruta segun settings.php
+                if (strlen($strPDF) > 0) {
+                    saveFile($clave  . ".pdf", $strPDF, "PDF", $fecha_timbrado, $Documento, $TipoDoc, $sessionID);
+                } else {
+                    Bitacora($sessionID, "No se logro generar y guardar el PDF del documento $Documento ");
+                }
+                $existe_pdf = file_exists($directory_pdf . "/" . $pdf_filename);
+
             }
             if (!$existe_pdf or !$existe_xml or !$existe_rsp) {
                 if (!$existe_pdf) {
@@ -1859,7 +2608,7 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
                     Bitacora($sessionID, "El mensaje no puedo ser enviado para el documento # $clave", $Documento, $TipoDoc);
                     UpdateMailSend('NO', $clave);
                 } else {
-                    Bitacora($sessionID, "**El mensaje fue enviado al cliente exitosamente**", $Documento, $TipoDoc);
+                    Bitacora($sessionID, "El mensaje fue enviado al cliente exitosamente", $Documento, $TipoDoc);
                     if ($clave != "") {
                         UpdateMailSend('SI', $clave);
                     }
@@ -1887,24 +2636,24 @@ function ProcesarPendientesRespuesta(string $sessionID)
     $top = params_get("batch_docs");
     $sql = "  SELECT $top d.TIPO_DOC, d.NUMERO_DOC, d.LINK_CONSULTA,d.SELLO_SAT
          FROM  DOC_ELECTRONICO_PROCESADO  d
-        WHERE (DATALENGTH( d.XML_RESPUESTA) < 6  OR d.XML_RESPUESTA is NULL)        
-        AND  d.FECHATIMBRADO  >= '2019-07-01'
+        WHERE (d.XML_RESPUESTA IS NULL OR d.XML_RESPUESTA = '')
+        AND d.ENVIADO = 'S'
+        AND  d.FECHATIMBRADO  >= '2025-01-01'
         ORDER BY d.FECHATIMBRADO ASC
 ";
 
     $result = sql_exec($sql, 2, false, true);
     if ($result == "-200") {
-        Bitacora($sessionID, "No se encontraron documentos pendientes");
+        Bitacora($sessionID, "No se encontraron documentos pendientes de respuesta");
         SetEnProceso($sessionID, 'NO');
     } else {
         $total_documentos = count($result);
         $i = 1;
-        Bitacora($sessionID, "  INICIA PROCESAMIENTO DE PENDIENTES DE RESPUESTA");
+        Bitacora($sessionID, "*******************PROCESAMIENTO DOCUMENTOS PENDIENTES DE RESPUESTA*****************");
         foreach ($result as $doc) {
             SetEnProceso($sessionID, 'SI');
             Bitacora($sessionID, "Procesando documento   " . $doc["NUMERO_DOC"] . "( $i de $total_documentos )", rtrim($doc["NUMERO_DOC"]), rtrim($doc["TIPO_DOC"]));
-            //ConsultarDirecto($sessionID, rtrim($doc["NUMERO_DOC"]), rtrim($doc["TIPO_DOC"]));
-            ProcesarDocumento($sessionID, rtrim($doc["NUMERO_DOC"]), rtrim($doc["TIPO_DOC"]));
+            ConsultarDirecto($sessionID, rtrim($doc["NUMERO_DOC"]), rtrim($doc["TIPO_DOC"]));
             $i++;
         }
         Bitacora($sessionID, "TERMINA PROCESAMIENTO DE PENDIENTES");
@@ -1923,43 +2672,35 @@ function ProcesarPendientesEnvio(string $sessionID)
 
         $myNit = getDatoCia($sessionID, "NIT", "", "");
         $fechaInicio = getDatoCia($sessionID, "FECHA_NORMATIVA", "", "");
-        $sql = "SELECT  $top V.TIPO_DOCUMENTO, V.DOCUMENTO, V.NIT, case V.CORREO when '1' then 'facturaelectronica@lospaticas.com' else correo end as CORREO,
+        $sql = "SELECT  $top V.TIPO_DOCUMENTO, RTRIM(V.DOCUMENTO) AS DOCUMENTO, V.NIT, case V.CORREO when '1' then 'facturaelectronica@lospaticas.com' else correo end as CORREO,
                          V.GLN,v.CLAVE,v.SAT
                          FROM V_DOCUMENTO_ELECTRONICO v
                          LEFT JOIN DOC_ELECTRONICO_PROCESADO p
                          ON v.DOCUMENTO=p.NUMERO_DOC
-                         WHERE v.ACEPTA_DOC_ELECTRONICO = 'S' AND v.NIT NOT IN ('$myNit')
-                         AND (p.ENVIADO='S' AND p.ACEPTADO='N')
-                         AND V.TIPO_DOCUMENTO IN ('FE','NC','ND','TE')                         
+                         WHERE v.ACEPTA_DOC_ELECTRONICO = 'S'
+                         AND v.NIT NOT IN ('$myNit')
+                         AND V.TIPO_DOCUMENTO IN ('FE','NC','ND','TE')
                          AND NOT v.SAT is NULL
-                         and v.FECHA >= '$fechaInicio'
-                         
-                        OR (
-                               ENVIADO is NULL AND ACEPTADO is NULL  and v.FECHA >= '$fechaInicio'
-                               AND v.ACEPTA_DOC_ELECTRONICO = 'S' AND v.NIT NOT IN('$myNit')
-                               AND V.TIPO_DOCUMENTO IN('FE', 'NC', 'ND', 'TE')
-                               AND v.DOCUMENTO <> 'F-00000000027825'                               
-                           )
-                        OR (
-                               ENVIADO ='N'  and v.FECHA >= '$fechaInicio'
-                               AND v.ACEPTA_DOC_ELECTRONICO = 'S' AND v.NIT NOT IN('$myNit')
-                               AND V.TIPO_DOCUMENTO IN('FE', 'NC', 'ND', 'TE')
-                               AND v.DOCUMENTO <> 'F-00000000027825'                               
-                           )
+                         AND v.FECHA >= '$fechaInicio'
                          AND v.DOCUMENTO <> 'F-00000000027825'
-                         ORDER BY v.DOCUMENTO";
+                         AND (
+                               (p.ENVIADO IS NULL AND p.ACEPTADO IS NULL)
+                               OR p.ENVIADO = 'N'
+                           )
+                         AND (p.ESTADO IS NULL OR p.ESTADO NOT IN ('rechazado', 'error'))
+                         ORDER BY v.FECHA ASC";
         $result = sql_exec($sql, 2, false, true);
         //echo $sql;
         if ($result == "-200") {
             Bitacora($sessionID, "No se encontraron nuevos documentos para procesar");
             return;
         } else {
-            Bitacora($sessionID, "*******************INICIA PROCESAMIENTO DE PENDIENTES DE ENVIO*****************");
+            Bitacora($sessionID, "*******************PROCESAMIENTO DOCUMENTOS NUEVOS*****************");
             $total_documentos = count($result);
             $i = 1;
             foreach ($result as $doc) {
-                Bitacora($sessionID, "----------------------- INICIA DOCUMENTO-------------------------------", rtrim($doc["DOCUMENTO"]), rtrim($doc["TIPO_DOCUMENTO"]));
-                Bitacora($sessionID, "Procesando documento " . $doc["DOCUMENTO"] . "( $i de $total_documentos )");
+                //Bitacora($sessionID, "", rtrim($doc["DOCUMENTO"]), rtrim($doc["TIPO_DOCUMENTO"]));
+                Bitacora($sessionID, "Procesando   " . $doc["DOCUMENTO"] . "( $i de $total_documentos )");
                 ProcesarDocumento($sessionID, rtrim($doc["DOCUMENTO"]), rtrim($doc["TIPO_DOCUMENTO"]));
                 $i++;
                 //Bitacora($sessionID, "----------------------- TERMINA DOCUMENTO-------------------------------", rtrim($doc["DOCUMENTO"]),rtrim($doc["TIPO_DOCUMENTO"]) );

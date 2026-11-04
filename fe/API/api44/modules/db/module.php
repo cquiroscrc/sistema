@@ -81,7 +81,7 @@ function db_Connect():bool
     grace_debug(__METHOD__ ."-> config['db']['host']: ");
     grace_debug(conf_get('host', 'db'));
 
-    $cnString='sqlsrv:server='.conf_get('host', 'db') . ';Database='. conf_get('name', 'db') . ';TrustServerCertificate=1'; // migracion: ODBC 18 cifra por defecto
+    $cnString='sqlsrv:server='.conf_get('host', 'db') . ';Database='. conf_get('name', 'db');
 
     try {
         $dbConn = new PDO($cnString, conf_get('user', 'db'), conf_get('pwd', 'db'), [ PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION ] );

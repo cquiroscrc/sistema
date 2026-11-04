@@ -158,7 +158,7 @@ function Footer()
         // Go to 1.5 cm from bottom
         $this->SetXY($this->GetPageWidth()-64,-17);
         $this->SetFont('Arial','',9);
-        $this->Cell(0,10,'Ver XML 4.3                           Pagina '.$this->PageNo(),0,0,'L');
+        $this->Cell(0,10,'Ver XML 4.4                          Pagina '.$this->PageNo(),0,0,'L');
 
         $this->SetXY(48,-13);
         $this->SetFont('Arial','B',10);
@@ -166,7 +166,7 @@ function Footer()
 
         $this->SetXY(43,-6);
         $this->SetFont('Arial','B',10);
-        $this->Cell($this->GetPageWidth()/2,1,'Autorizada mediante resolucion No DGT-R-33-2019 del 1 de julio de 2019',0,0,'C');
+        $this->Cell($this->GetPageWidth()/2,1,' Autorizada mediante resolucion No MH-DGT-RES-0027-2024',0,0,'C');
     }
 function  ImprimirEncabezados($sessionID, $Documento, $TipoDocumento,$result){
         $pw=$this->GetPageWidth()-5;
