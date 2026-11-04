@@ -447,7 +447,8 @@ function bz_analizar(string $raw, array $propios): array
         return $n !== '' && in_array($n, $prop, true);
     };
     $omitidas = [];
-    foreach ($docs as $d) if ($d['clase'] !== 'receptor' && $esPropio($d['xml']['clave'], $d['xml']['nit_emisor'] ?? null)) $omitidas[$d['xml']['clave']] = true;
+    // (incluye MensajeReceptor/MensajeHacienda de clientes que aceptan facturas de Los Paticas: su NumeroCedulaEmisor es Los Paticas)
+    foreach ($docs as $d) if ($esPropio($d['xml']['clave'], $d['xml']['nit_emisor'] ?? null)) $omitidas[$d['xml']['clave']] = true;
     return [
         'message_id' => trim($h['message-id'][0] ?? '', " <>\t"), 'remitente' => $from,
         'remitente_email' => preg_match('/[\w.+%-]+@[\w.-]+\.\w+/', $from, $m) ? strtolower($m[0]) : null,
