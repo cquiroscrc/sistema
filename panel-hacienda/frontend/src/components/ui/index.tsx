@@ -53,6 +53,16 @@ const est: Record<string, { c: string; t: string }> = {
   enviando: { c: 'bg-info/15 text-info ring-info/30', t: 'Enviando' },
   procesando: { c: 'bg-info/15 text-info ring-info/30', t: 'Enviando' },
   reintentar: { c: 'bg-info/15 text-info ring-info/30', t: 'Reintento' },
+  aceptado_parcial: { c: 'bg-success/10 text-success ring-success/30', t: 'Aceptado parcial' },
+  sin_respuesta: { c: 'bg-warning/15 text-warning ring-warning/30', t: 'Sin respuesta MH' },
+  ok: { c: 'bg-success/10 text-success ring-success/30', t: 'Con documentos' },
+  sin_documentos: { c: 'bg-muted text-muted-foreground ring-border', t: 'Sin documentos' },
+  propio: { c: 'bg-info/10 text-info ring-info/30', t: 'Emitido por Los Paticas' },
+  duplicado: { c: 'bg-muted text-muted-foreground ring-border', t: 'Duplicado' },
+  muy_grande: { c: 'bg-warning/15 text-warning ring-warning/30', t: 'Muy grande' },
+  'sin credenciales': { c: 'bg-warning/15 text-warning ring-warning/30', t: 'Sin credenciales' },
+  'en curso': { c: 'bg-info/15 text-info ring-info/30', t: 'En curso' },
+  nunca: { c: 'bg-muted text-muted-foreground ring-border', t: 'Nunca' },
 };
 export const EstadoBadge = ({ estado }: { estado: string }) => {
   const e = est[estado] ?? { c: 'bg-muted text-muted-foreground ring-border', t: estado || '—' };

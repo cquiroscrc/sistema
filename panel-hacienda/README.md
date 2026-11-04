@@ -67,3 +67,25 @@ Nunca deben estar activos a la vez la tarea de Windows y el timer de .106.
 Vista previa actual/nuevo, Aplicar (escribir APLICAR) en transacción con respaldo JSON en `/var/lib/lospaticas/panel/`,
 Revertir (escribir REVERTIR), historial en `/var/lib/lospaticas/panel/acciones.log` y en BITACORA. No toca el servicio ni el archivo de corte.
 Tras la restauración final de la BD en el corte hay que aplicarlo de nuevo.
+
+## Buzón FE (comprobantes recibidos por correo)
+- Cuenta: `facturaelectronica@lospaticas.com` en `mail.lospaticas.com:993` (IMAPS, certificado verificado).
+  Credenciales SOLO en `/etc/lospaticas/buzon-fe.env` (root 600; `IMAP_PASS` o `IMAP_PASS_B64`). Si la clave está vacía,
+  la corrida termina bien con estado **"sin credenciales"** (se ve en el panel).
+- **Solo lectura**: EXAMINE + `BODY.PEEK` (no marca leídos, no mueve, no borra; el cliente bloquea STORE/COPY/MOVE/EXPUNGE/APPEND/DELETE/SELECT).
+  No se envía ningún correo ni se manda nada a Hacienda.
+- `paticas-buzon-fe.timer` cada 5 min → `paticas-buzon-fe.service` (www-data, `flock -n /run/lock/paticas-buzon-fe.lock`).
+  "Sincronizar ahora" del panel hace `sudo systemctl start --no-block paticas-buzon-fe.service` (sudoers).
+- Script: `panel-hacienda/buzon/buzon-sync.php` (`--listar` carpetas, `--schema` DDL, `--eml=archivo` analizar sin escribir,
+  `--importar-eml=archivo` prueba, `--max=N`). Bitácora `/var/lib/lospaticas/panel/buzon-sync.log`, estado `buzon-estado.json`.
+- Archivos en `/var/lib/lospaticas/fe/buzon/<aaaa>/<mm>/<clave>/` (`<clave>.xml`, `_respuesta.xml`, `.pdf`); PDFs sin clave en `sin-clave/`.
+  No se publican por nginx: solo se sirven por `api.php?accion=buzon_archivo` (sesión + ruta validada con realpath).
+- Deduplicación: (cuenta, carpeta, UIDVALIDITY, UID) + Message-ID; documentos por CLAVE (upsert). Los XML/ZIP se analizan
+  con DOCTYPE rechazado y sin red; ZIP limitado (200 entradas, 30 MB c/u, 100 MB total).
+- Se omiten por defecto los comprobantes emitidos por Los Paticas (`BUZON_IGNORAR_EMISORES=3101090358,310109035837`).
+- Tablas `FE_BUZON_CORREOS`, `FE_BUZON_DOCUMENTOS`, `FE_BUZON_ARCHIVOS` (DDL idempotente en `buzon/schema.sql`).
+  **Después de la restauración final de `inventario`**: ejecutar
+  `sudo -u www-data php8.5 /var/www/lospaticas/sistema/panel-hacienda/buzon/buzon-sync.php --schema` y luego
+  `sudo rm -f /var/lib/lospaticas/panel/buzon-estado.json && sudo systemctl start paticas-buzon-fe.service` (vuelve a escanear;
+  los archivos existentes se reutilizan por SHA-256).
+- Pendiente / siguiente paso posible: enviar el MensajeReceptor (aceptación/rechazo) a Hacienda. **No implementado.**

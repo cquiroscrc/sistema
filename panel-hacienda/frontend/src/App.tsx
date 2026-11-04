@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { LayoutDashboard, ScrollText, FileText, Hourglass, Power, FolderSync, Moon, Sun, LogOut, Menu, Receipt } from 'lucide-react';
+import { LayoutDashboard, ScrollText, FileText, Hourglass, Power, FolderSync, Moon, Sun, LogOut, Menu, Receipt, Inbox } from 'lucide-react';
 import { api, setCsrf, setOnUnauthorized, type Status } from './lib/api';
 import { cn } from './lib/utils';
 import { Spinner, useToast } from './components/ui';
@@ -11,14 +11,16 @@ import Comprobantes from './pages/Comprobantes';
 import Cola from './pages/Cola';
 import Servicio from './pages/Servicio';
 import RutasDEData from './pages/RutasDEData';
+import BuzonFE from './pages/BuzonFE';
 
-export type Vista = 'inicio' | 'registro' | 'comprobantes' | 'cola' | 'servicio' | 'rutas';
+export type Vista = 'inicio' | 'registro' | 'comprobantes' | 'cola' | 'servicio' | 'rutas' | 'buzon';
 const NAV: { id: Vista; label: string; icon: any }[] = [
   { id: 'inicio', label: 'Resumen', icon: LayoutDashboard },
   { id: 'comprobantes', label: 'Comprobantes', icon: FileText },
   { id: 'registro', label: 'Registro en vivo', icon: ScrollText },
   { id: 'cola', label: 'Cola de envío', icon: Hourglass },
   { id: 'servicio', label: 'Servicio de envío', icon: Power },
+  { id: 'buzon', label: 'Buzón FE', icon: Inbox },
   { id: 'rutas', label: 'Rutas y DEData', icon: FolderSync },
 ];
 const vistaDeHash = (): Vista => { const h = location.hash.replace('#/', '') as Vista; return NAV.some(n => n.id === h) ? h : 'inicio'; };
@@ -85,6 +87,7 @@ export default function App() {
           {vista === 'cola' && <Cola />}
           {vista === 'servicio' && <Servicio status={status} onCambio={cargarStatus} />}
           {vista === 'rutas' && <RutasDEData />}
+          {vista === 'buzon' && <BuzonFE />}
         </ErrorBoundary>
       </main>
     </div>

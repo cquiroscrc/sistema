@@ -26,6 +26,13 @@ try {
         case 'rutas_aplicar':  ph_require_post(); ph_json(api_rutas_aplicar());
         case 'rutas_revertir': ph_require_post(); ph_json(api_rutas_revertir());
         case 'dedata':   ph_json(api_dedata_estado());
+        case 'buzon_estado':  ph_json(api_buzon_estado());
+        case 'buzon_sync':    ph_require_post(); ph_json(api_buzon_sync());
+        case 'buzon_kpis':    ph_json(api_buzon_kpis());
+        case 'buzon_docs':    ph_json(api_buzon_docs());
+        case 'buzon_doc':     ph_json(api_buzon_doc());
+        case 'buzon_correos': ph_json(api_buzon_correos());
+        case 'buzon_archivo': api_buzon_archivo();
         case 'dedata_sync': ph_require_post(); ph_json(api_dedata_sync());
         default:         ph_json(['ok' => false, 'error' => 'Accion desconocida'], 400);
     }
@@ -527,4 +534,167 @@ function api_dedata_sync(): array
     ph_accion('dedata: sincronizacion iniciada');
     usleep(1500000);
     return ['ok' => $rc === 0, 'mensaje' => 'Sincronizacion iniciada en segundo plano'] + api_dedata_estado();
+}
+
+/* ---------------- Buzon FE (facturaelectronica@lospaticas.com, solo lectura) ---------------- */
+require_once __DIR__ . '/buzon/buzon-lib.php';
+
+function bz_tablas_ok(): bool
+{
+    return (int)ph_db()->query("SELECT COUNT(*) FROM sys.tables WHERE name IN ('FE_BUZON_CORREOS','FE_BUZON_DOCUMENTOS','FE_BUZON_ARCHIVOS')")->fetchColumn() === 3;
+}
+
+function bz_sin_tablas(): array
+{
+    return ['ok' => false, 'error' => 'Las tablas FE_BUZON_* no existen en esta BD (¿restauración nueva?). Ejecute: sudo -u www-data php8.5 panel-hacienda/buzon/buzon-sync.php --schema'];
+}
+
+function api_buzon_estado(): array
+{
+    $e = is_readable(BZ_ESTADO) ? (json_decode((string)file_get_contents(BZ_ESTADO), true) ?: []) : [];
+    $log = is_readable(BZ_LOG) ? array_slice(file(BZ_LOG, FILE_IGNORE_NEW_LINES) ?: [], -30) : [];
+    $enCurso = false;
+    if ($fh = @fopen('/run/lock/paticas-buzon-fe.lock', 'r')) { $enCurso = !flock($fh, LOCK_SH | LOCK_NB); if (!$enCurso) flock($fh, LOCK_UN); fclose($fh); }
+    $t = ph_systemctl_show('paticas-buzon-fe.timer', ['ActiveState', 'UnitFileState', 'NextElapseUSecRealtime', 'LastTriggerUSec']);
+    return ['ok' => true, 'estado' => $e + ['estado' => 'nunca'], 'en_curso' => $enCurso, 'timer' => $t, 'tablas' => bz_tablas_ok(), 'log' => array_map('ph_mask', array_reverse($log))];
+}
+
+function api_buzon_sync(): array
+{
+    $out = []; $rc = 0;
+    exec('/usr/bin/sudo -n /usr/bin/systemctl start --no-block paticas-buzon-fe.service 2>&1', $out, $rc);
+    ph_accion("buzon: sincronizacion manual solicitada (rc=$rc)");
+    usleep(800000);
+    return ['ok' => $rc === 0, 'mensaje' => $rc === 0 ? 'Sincronización iniciada' : 'No se pudo iniciar: ' . implode(' ', $out)] + api_buzon_estado();
+}
+
+function bz_where(array &$p): string
+{
+    $w = ['1 = 1'];
+    $q = trim((string)($_GET['q'] ?? ''));
+    if ($q !== '') { $w[] = '(d.NOMBRE LIKE ? OR d.NIT_EMISOR LIKE ? OR d.CLAVE LIKE ? OR d.CONSECUTIVO LIKE ? OR d.NOMBRE_RECEPTOR LIKE ?)'; array_push($p, ...array_fill(0, 5, '%' . $q . '%')); }
+    $tipo = (string)($_GET['tipo'] ?? '');
+    if (in_array($tipo, ['FE', 'TE', 'NC', 'ND', 'FEC', 'FEE', 'REP'], true)) { $w[] = 'd.TIPO_DOC = ?'; $p[] = $tipo; }
+    $est = (string)($_GET['estado'] ?? '');
+    if (in_array($est, ['aceptado', 'aceptado_parcial', 'rechazado'], true)) { $w[] = 'd.ESTADO_HACIENDA = ?'; $p[] = $est; }
+    elseif ($est === 'sin_respuesta') $w[] = 'd.ESTADO_HACIENDA IS NULL';
+    if (($d = ph_date($_GET['desde'] ?? null))) { $w[] = 'd.FECHA_EMISION >= ?'; $p[] = $d . ' 00:00:00'; }
+    if (($h = ph_date($_GET['hasta'] ?? null))) { $w[] = 'd.FECHA_EMISION < DATEADD(day, 1, CAST(? AS date))'; $p[] = $h; }
+    if (($_GET['para'] ?? '') === '1') $w[] = 'd.PARA_LOS_PATICAS = 1';
+    return implode(' AND ', $w);
+}
+
+function bz_fila(array $r): array
+{
+    return ['id' => (int)$r['ID'], 'clave' => $r['CLAVE'], 'tipo' => $r['TIPO_DOC'], 'consecutivo' => $r['CONSECUTIVO'], 'fecha' => $r['FECHA_EMISION'],
+        'emisor' => ph_utf8($r['NOMBRE']), 'nit_emisor' => $r['NIT_EMISOR'], 'receptor' => ph_utf8($r['NOMBRE_RECEPTOR']), 'nit_receptor' => $r['NIT_RECEPTOR'],
+        'para' => (bool)$r['PARA_LOS_PATICAS'], 'moneda' => $r['MONEDA'], 'total' => $r['TOTALCOMPROBANTE'] === null ? null : (float)$r['TOTALCOMPROBANTE'],
+        'impuesto' => $r['TOTALIMPUESTO'] === null ? null : (float)$r['TOTALIMPUESTO'], 'estado' => $r['ESTADO_HACIENDA'] ?: 'sin_respuesta',
+        'xml' => (bool)$r['TIENE_XML'], 'respuesta' => (bool)$r['TIENE_RESPUESTA'], 'pdf' => (bool)$r['TIENE_PDF']];
+}
+
+const BZ_COLS = 'd.ID, d.CLAVE, d.TIPO_DOC, d.CONSECUTIVO, CONVERT(varchar(19), d.FECHA_EMISION, 120) FECHA_EMISION, d.NOMBRE, d.NIT_EMISOR, d.NOMBRE_RECEPTOR, d.NIT_RECEPTOR,
+    d.PARA_LOS_PATICAS, d.MONEDA, d.TOTALCOMPROBANTE, d.TOTALIMPUESTO, d.ESTADO_HACIENDA, d.TIENE_XML, d.TIENE_RESPUESTA, d.TIENE_PDF';
+
+function api_buzon_docs(): array
+{
+    if (!bz_tablas_ok()) return bz_sin_tablas();
+    $p = []; $w = bz_where($p);
+    $size = min(100, max(10, (int)($_GET['size'] ?? 25))); $page = max(1, (int)($_GET['page'] ?? 1));
+    $st = ph_db()->prepare("SELECT COUNT(*) FROM dbo.FE_BUZON_DOCUMENTOS d WHERE $w"); $st->execute($p); $total = (int)$st->fetchColumn();
+    $off = ($page - 1) * $size;
+    $st = ph_db()->prepare('SELECT ' . BZ_COLS . " FROM dbo.FE_BUZON_DOCUMENTOS d WHERE $w ORDER BY d.FECHA_EMISION DESC, d.ID DESC OFFSET $off ROWS FETCH NEXT $size ROWS ONLY");
+    $st->execute($p);
+    return ['ok' => true, 'total' => $total, 'page' => $page, 'size' => $size, 'rows' => array_map('bz_fila', $st->fetchAll(PDO::FETCH_ASSOC))];
+}
+
+function api_buzon_kpis(): array
+{
+    if (!bz_tablas_ok()) return bz_sin_tablas();
+    $db = ph_db();
+    $mes = "d.FECHA_EMISION >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)";
+    $r = $db->query("SELECT COUNT(*) n, SUM(CASE WHEN d.ESTADO_HACIENDA = 'rechazado' THEN 1 ELSE 0 END) rech, SUM(CASE WHEN d.ESTADO_HACIENDA IS NULL THEN 1 ELSE 0 END) sinr,
+        SUM(CASE WHEN d.PARA_LOS_PATICAS = 1 THEN 1 ELSE 0 END) para FROM dbo.FE_BUZON_DOCUMENTOS d WHERE $mes")->fetch(PDO::FETCH_ASSOC);
+    $mon = $db->query("SELECT ISNULL(d.MONEDA, 'CRC') moneda, COUNT(*) n, SUM(CASE WHEN d.TIPO_DOC = 'NC' THEN -1 ELSE 1 END * ISNULL(d.TOTALCOMPROBANTE, 0)) total,
+        SUM(CASE WHEN d.TIPO_DOC = 'NC' THEN -1 ELSE 1 END * ISNULL(d.TOTALIMPUESTO, 0)) impuesto FROM dbo.FE_BUZON_DOCUMENTOS d WHERE $mes AND d.TIPO_DOC IS NOT NULL GROUP BY ISNULL(d.MONEDA, 'CRC') ORDER BY 2 DESC")->fetchAll(PDO::FETCH_ASSOC);
+    $tipos = $db->query("SELECT ISNULL(TIPO_DOC, '?') t, COUNT(*) n FROM dbo.FE_BUZON_DOCUMENTOS GROUP BY TIPO_DOC ORDER BY 2 DESC")->fetchAll(PDO::FETCH_KEY_PAIR);
+    $g = $db->query("SELECT COUNT(*) n, CONVERT(varchar(10), MIN(FECHA_EMISION), 120) desde, CONVERT(varchar(10), MAX(FECHA_EMISION), 120) hasta FROM dbo.FE_BUZON_DOCUMENTOS")->fetch(PDO::FETCH_ASSOC);
+    $c = $db->query("SELECT ESTADO, COUNT(*) n FROM dbo.FE_BUZON_CORREOS GROUP BY ESTADO")->fetchAll(PDO::FETCH_KEY_PAIR);
+    return ['ok' => true, 'mes' => ['documentos' => (int)$r['n'], 'rechazados' => (int)$r['rech'], 'sin_respuesta' => (int)$r['sinr'], 'para_los_paticas' => (int)$r['para'],
+        'por_moneda' => array_map(fn($m) => ['moneda' => $m['moneda'], 'n' => (int)$m['n'], 'total' => (float)$m['total'], 'impuesto' => (float)$m['impuesto']], $mon)],
+        'total' => ['documentos' => (int)$g['n'], 'desde' => $g['desde'], 'hasta' => $g['hasta'], 'por_tipo' => array_map('intval', $tipos)],
+        'correos' => array_map('intval', $c)];
+}
+
+function bz_ruta_segura(string $rel): ?string
+{
+    if ($rel === '' || str_contains($rel, '..') || str_contains($rel, "\0")) return null;
+    $abs = realpath(BZ_BASE . '/' . ltrim($rel, '/'));
+    $base = realpath(BZ_BASE);
+    return $abs && $base && str_starts_with($abs, $base . '/') && is_file($abs) ? $abs : null;
+}
+
+function api_buzon_doc(): array
+{
+    if (!bz_tablas_ok()) return bz_sin_tablas();
+    $id = (int)($_GET['id'] ?? 0);
+    $st = ph_db()->prepare('SELECT d.*, CONVERT(varchar(19), d.FECHA_EMISION, 120) FECHA_EMISION_F, CONVERT(varchar(19), d.FECHA_INGRESO, 120) FECHA_INGRESO_F FROM dbo.FE_BUZON_DOCUMENTOS d WHERE d.ID = ?');
+    $st->execute([$id]);
+    $d = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$d) return ['ok' => false, 'error' => 'Documento no encontrado'];
+    $d = array_map(fn($v) => is_string($v) ? ph_utf8($v) : $v, $d);
+    $a = ph_db()->prepare("SELECT a.ID, a.CLASE, a.NOMBRE, a.ORIGEN_ZIP, a.RUTA, a.TAMANO, a.CORREO_ID, CONVERT(varchar(19), a.FECHA, 120) FECHA,
+        c.REMITENTE, c.REMITENTE_EMAIL, c.PARA, c.ASUNTO, CONVERT(varchar(19), c.FECHA_CORREO, 120) FECHA_CORREO, CONVERT(varchar(19), c.FECHA_RECIBIDO, 120) FECHA_RECIBIDO,
+        c.CARPETA, c.MESSAGE_ID FROM dbo.FE_BUZON_ARCHIVOS a LEFT JOIN dbo.FE_BUZON_CORREOS c ON c.ID = a.CORREO_ID WHERE a.CLAVE = ? ORDER BY a.ID");
+    $a->execute([$d['CLAVE']]);
+    $arch = []; $correos = []; $xml = null; $resp = null; $pdf = null;
+    foreach ($a->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $r = array_map(fn($v) => is_string($v) ? ph_utf8($v) : $v, $r);
+        $arch[] = ['id' => (int)$r['ID'], 'clase' => $r['CLASE'], 'nombre' => $r['NOMBRE'], 'zip' => $r['ORIGEN_ZIP'], 'tamano' => (int)$r['TAMANO'], 'fecha' => $r['FECHA'], 'correo_id' => (int)$r['CORREO_ID']];
+        $correos[$r['CORREO_ID']] = ['id' => (int)$r['CORREO_ID'], 'remitente' => $r['REMITENTE'], 'email' => $r['REMITENTE_EMAIL'], 'para' => $r['PARA'], 'asunto' => $r['ASUNTO'],
+            'fecha' => $r['FECHA_CORREO'], 'recibido' => $r['FECHA_RECIBIDO'], 'carpeta' => $r['CARPETA'], 'message_id' => $r['MESSAGE_ID']];
+        $abs = bz_ruta_segura((string)$r['RUTA']);
+        if ($abs && $r['CLASE'] === 'xml' && $xml === null) $xml = xml_pretty((string)file_get_contents($abs, false, null, 0, 2 * 1048576));
+        if ($abs && $r['CLASE'] === 'respuesta' && $resp === null) $resp = xml_pretty((string)file_get_contents($abs, false, null, 0, 2 * 1048576));
+        if ($abs && $r['CLASE'] === 'pdf' && $pdf === null) $pdf = (int)$r['ID'];
+    }
+    return ['ok' => true, 'doc' => $d, 'archivos' => $arch, 'correos' => array_values($correos), 'xml' => $xml, 'xml_respuesta' => $resp, 'pdf_id' => $pdf];
+}
+
+function api_buzon_correos(): array
+{
+    if (!bz_tablas_ok()) return bz_sin_tablas();
+    $p = []; $w = ['1 = 1'];
+    $est = (string)($_GET['estado'] ?? '');
+    if (in_array($est, ['ok', 'sin_documentos', 'propio', 'duplicado', 'muy_grande', 'error'], true)) { $w[] = 'ESTADO = ?'; $p[] = $est; }
+    $q = trim((string)($_GET['q'] ?? ''));
+    if ($q !== '') { $w[] = '(REMITENTE LIKE ? OR ASUNTO LIKE ?)'; $p[] = "%$q%"; $p[] = "%$q%"; }
+    $w = implode(' AND ', $w);
+    $size = min(100, max(10, (int)($_GET['size'] ?? 25))); $page = max(1, (int)($_GET['page'] ?? 1)); $off = ($page - 1) * $size;
+    $st = ph_db()->prepare("SELECT COUNT(*) FROM dbo.FE_BUZON_CORREOS WHERE $w"); $st->execute($p); $total = (int)$st->fetchColumn();
+    $st = ph_db()->prepare("SELECT ID, CARPETA, REMITENTE, ASUNTO, CONVERT(varchar(19), FECHA_RECIBIDO, 120) RECIBIDO, TAMANO, ADJUNTOS, DOCUMENTOS, ESTADO, ERROR
+        FROM dbo.FE_BUZON_CORREOS WHERE $w ORDER BY FECHA_RECIBIDO DESC, ID DESC OFFSET $off ROWS FETCH NEXT $size ROWS ONLY");
+    $st->execute($p);
+    $rows = array_map(fn($r) => ['id' => (int)$r['ID'], 'carpeta' => ph_utf8($r['CARPETA']), 'remitente' => ph_utf8($r['REMITENTE']), 'asunto' => ph_utf8($r['ASUNTO']),
+        'recibido' => $r['RECIBIDO'], 'tamano' => (int)$r['TAMANO'], 'adjuntos' => (int)$r['ADJUNTOS'], 'documentos' => (int)$r['DOCUMENTOS'], 'estado' => $r['ESTADO'],
+        'error' => ph_mask(ph_utf8($r['ERROR']))], $st->fetchAll(PDO::FETCH_ASSOC));
+    return ['ok' => true, 'total' => $total, 'page' => $page, 'size' => $size, 'rows' => $rows];
+}
+
+function api_buzon_archivo(): never
+{
+    if (!bz_tablas_ok()) no_disponible('Tablas del buzón no disponibles');
+    $st = ph_db()->prepare('SELECT CLASE, NOMBRE, RUTA, CLAVE FROM dbo.FE_BUZON_ARCHIVOS WHERE ID = ?');
+    $st->execute([(int)($_GET['id'] ?? 0)]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+    $abs = $r ? bz_ruta_segura((string)$r['RUTA']) : null;
+    if (!$abs) no_disponible('Archivo no disponible');
+    $pdf = $r['CLASE'] === 'pdf';
+    $nombre = bz_nombre_seguro(($r['CLAVE'] ?: 'documento') . (['xml' => '.xml', 'respuesta' => '_respuesta.xml', 'receptor' => '_receptor.xml', 'pdf' => '.pdf'][$r['CLASE']] ?? '.bin'));
+    ph_accion_log("buzon: archivo {$r['CLASE']} {$r['CLAVE']}");
+    header('Content-Type: ' . ($pdf ? 'application/pdf' : 'application/xml; charset=utf-8'));
+    header('Content-Disposition: ' . ($pdf && ($_GET['descargar'] ?? '') !== '1' ? 'inline' : 'attachment') . '; filename="' . $nombre . '"');
+    header('Content-Length: ' . filesize($abs));
+    readfile($abs);
+    exit;
 }
