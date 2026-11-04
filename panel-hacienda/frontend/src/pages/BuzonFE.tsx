@@ -168,14 +168,14 @@ export default function BuzonFE() {
     <Tabs value={vista} onChange={setVista} items={[{ id: 'docs', label: 'Comprobantes recibidos' }, { id: 'correos', label: 'Correos procesados' }]} />
     {vista === 'correos' ? <Correos /> : <>
       <Card><CardBody>
-        <form className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7 [&>*]:min-w-0" onSubmit={e => { e.preventDefault(); cargar(1); }}>
+        <form className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-8 [&>*]:min-w-0" onSubmit={e => { e.preventDefault(); cargar(1); }}>
           <div className="sm:col-span-2 lg:col-span-1 2xl:col-span-2"><Label>Buscar</Label><div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input className="pl-9" value={f.q} onChange={set('q')} placeholder="Emisor, cédula, clave o consecutivo" /></div></div>
           <div><Label>Tipo</Label><Select value={f.tipo} onChange={set('tipo')}><option value="">Todos</option>{Object.entries(TIPOS).map(([k2, v]) => <option key={k2} value={k2}>{k2} · {v}</option>)}</Select></div>
           <div><Label>Estado Hacienda</Label><Select value={f.estado} onChange={set('estado')}><option value="">Todos</option><option value="aceptado">Aceptado</option><option value="aceptado_parcial">Aceptado parcial</option><option value="rechazado">Rechazado</option><option value="sin_respuesta">Sin respuesta</option></Select></div>
           <div><Label>Desde</Label><Input type="date" value={f.desde} onChange={set('desde')} /></div>
           <div><Label>Hasta</Label><Input type="date" value={f.hasta} onChange={set('hasta')} /></div>
-          <div className="flex items-center justify-between gap-3"><Switch checked={f.para === '1'} onChange={v => setF({ ...f, para: v ? '1' : '' })} label="Solo Los Paticas" /><Button type="submit">Filtrar</Button></div>
+          <div className="flex items-center justify-between gap-3 2xl:col-span-2"><Switch checked={f.para === '1'} onChange={v => setF({ ...f, para: v ? '1' : '' })} label="Solo Los Paticas" /><Button type="submit">Filtrar</Button></div>
         </form>
       </CardBody></Card>
       <Card className="overflow-hidden">
