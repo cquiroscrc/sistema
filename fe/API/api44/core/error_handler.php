@@ -26,7 +26,7 @@ set_error_handler(function ($level, $message, $file = '', $line = 0) {
 //Para cuando es error grave de php y se sale de todo
 register_shutdown_function(function () {
         $error = error_get_last();
-    if ($error !== null) {
+    if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
         $e = new ErrorException(
             $error['message'], 0, $error['type'], $error['file'], $error['line']
         );

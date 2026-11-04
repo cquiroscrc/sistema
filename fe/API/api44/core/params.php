@@ -59,7 +59,7 @@ function params_set($p, $val = false, $override = false)
 /**
  * Helper function to actually store the params
  */
-function _params_set($p, $val = false, $override)
+function _params_set($p, $val = false, $override = false)
 {
     global $params;
 

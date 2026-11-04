@@ -1609,7 +1609,7 @@ function Procesa500($respuesta, $sessionID, $Documento, $TipoDoc, $XML)
         }
 
         $UltimoError = "El servidor ha devuelto el siguiente error: $x_error_cause";
-        UpdateInsert("N", "N", "N", "S", $UltimoError, "error", $XML, $Documento, $TipoDoc);
+        UpdateInsert("N", "N", "N", "S", $UltimoError, "error", $XML, null, $sessionID, $Documento, $TipoDoc); // antes faltaban 2 argumentos (ArgumentCountError)
     } catch (Exception $ex) {
         SetContinuar(false);
         Bitacora($sessionID, "Procesa500 Error: {$ex->getMessage()} ({$ex->getLine()})", $Documento, $TipoDoc);

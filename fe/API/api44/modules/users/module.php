@@ -776,7 +776,7 @@ function users_access($perm, $theUser = false)
     if ($user->idUser == 1)
         return true;
 
-    grace_debug(__METHOD__ ."-> Checking for perms: " + $perm);
+    grace_debug(__METHOD__ ."-> Checking for perms: " . $perm);
 
     #@todo Actually check the perms :)
     return true;
