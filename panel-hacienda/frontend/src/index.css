@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 33% 98%; --foreground: 222 47% 11%;
+    --card: 0 0% 100%; --card-foreground: 222 47% 11%;
+    --muted: 214 32% 94%; --muted-foreground: 215 16% 42%;
+    --border: 214 28% 88%; --input: 214 28% 85%; --ring: 173 80% 32%;
+    --primary: 173 80% 28%; --primary-foreground: 0 0% 100%;
+    --sidebar: 199 60% 12%; --sidebar-foreground: 200 30% 88%; --sidebar-accent: 173 70% 40%;
+    --success: 152 65% 34%; --danger: 0 72% 50%; --warning: 36 92% 46%; --info: 212 85% 52%;
+  }
+  .dark {
+    --background: 222 40% 7%; --foreground: 210 30% 94%;
+    --card: 222 35% 11%; --card-foreground: 210 30% 94%;
+    --muted: 222 25% 16%; --muted-foreground: 215 18% 64%;
+    --border: 222 22% 20%; --input: 222 22% 24%; --ring: 173 70% 45%;
+    --primary: 173 70% 42%; --primary-foreground: 222 47% 8%;
+    --sidebar: 222 45% 5%; --sidebar-foreground: 210 25% 80%; --sidebar-accent: 173 70% 45%;
+    --success: 152 60% 45%; --danger: 0 75% 60%; --warning: 38 92% 56%; --info: 212 90% 64%;
+  }
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground antialiased; font-feature-settings: "cv11", "ss01"; }
+  ::selection { background: hsl(var(--primary) / .25); }
+}
+@layer utilities {
+  .scrollbar-thin { scrollbar-width: thin; }
+}
+
+@keyframes ph-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.animate-in { animation: ph-in .2s ease-out; }

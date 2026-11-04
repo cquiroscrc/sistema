@@ -4,7 +4,15 @@ require __DIR__ . '/lib.php';
 
 $a = $_GET['a'] ?? '';
 try {
+    // Sin sesion solo se permite: sesion (token CSRF y estado), login y logout.
     switch ($a) {
+        case 'sesion': ph_json(['ok' => true, 'autenticado' => ph_user() !== '', 'usuario' => ph_user(), 'nombre' => $_SESSION['nombre'] ?? '', 'csrf' => $_SESSION['csrf']]);
+        case 'login':  ph_require_post(); $r = ph_login((string)($_POST['usuario'] ?? ''), (string)($_POST['password'] ?? '')); ph_json($r + ['csrf' => $_SESSION['csrf']], $r['ok'] ? 200 : 401);
+        case 'logout': ph_require_post(); if (ph_user() !== '') ph_accion('logout'); $_SESSION = []; session_regenerate_id(true); $_SESSION['csrf'] = bin2hex(random_bytes(32)); ph_json(['ok' => true, 'csrf' => $_SESSION['csrf']]);
+    }
+    ph_require_login();
+    switch ($a) {
+        case 'grafico':  ph_json(api_grafico());
         case 'status':   ph_json(api_status());
         case 'logs':     ph_json(api_logs());
         case 'docs':     ph_json(api_docs());
@@ -37,10 +45,10 @@ function api_status(): array
     return [
         'ok' => true,
         'ahora' => date('Y-m-d H:i:s'),
-        'usuario' => $_SERVER['REMOTE_USER'],
-        'corte_realizado' => file_exists(PH_GUARD),
+        'usuario' => ph_user(),
+        'servicio_activo' => ($t['ActiveState'] ?? '') === 'active',
         'timer' => $t, 'servicio' => $s,
-        'bd' => $info + ['restaurada' => $restore, 'es_copia' => !file_exists(PH_GUARD)],
+        'bd' => $info + ['restaurada' => $restore],
         'ultima_bitacora' => $q("SELECT CONVERT(varchar(19), MAX(FECHA_HORA), 120) FROM dbo.BITACORA"),
         'ultimo_documento' => $q("SELECT CONVERT(varchar(19), MAX(FECHA_HORA), 120) FROM dbo.DOC_ELECTRONICO_PROCESADO"),
         'conteos' => [
@@ -48,6 +56,7 @@ function api_status(): array
             'reintentar' => (int)$q("SELECT COUNT(*) FROM dbo.DOC_ELECTRONICO_PROCESADO WHERE ESTADO = 'reintentar'"),
             'pendiente_respuesta' => (int)$q("SELECT COUNT(*) FROM dbo.DOC_ELECTRONICO_PROCESADO WHERE (XML_RESPUESTA IS NULL OR XML_RESPUESTA = '') AND ENVIADO = 'S' AND FECHATIMBRADO >= '2025-01-01'"),
             'rechazado_hoy' => (int)$q("SELECT COUNT(*) FROM dbo.DOC_ELECTRONICO_PROCESADO WHERE ESTADO = 'rechazado' AND FECHA_HORA >= CAST(GETDATE() AS date)"),
+            'enviados_hoy' => (int)$q("SELECT COUNT(*) FROM dbo.DOC_ELECTRONICO_PROCESADO WHERE ENVIADO = 'S' AND FECHA_HORA >= CAST(GETDATE() AS date)"),
             'aceptado_hoy' => (int)$q("SELECT COUNT(*) FROM dbo.DOC_ELECTRONICO_PROCESADO WHERE ESTADO LIKE 'aceptado%' AND FECHA_HORA >= CAST(GETDATE() AS date)"),
             'cola' => (int)$db->query('SELECT COUNT(*) FROM (' . cola_sql('') . ') x')->fetchColumn(),
         ],
@@ -256,39 +265,54 @@ function puede_reintentar(array $r): bool
     return strtolower(trim((string)$r['ESTADO'])) === 'error' && trim((string)($r['ENVIADO'] ?? 'N')) !== 'S' && trim((string)($r['ACEPTADO'] ?? 'N')) !== 'S';
 }
 
+function ph_servicio_activo(): bool
+{
+    return (ph_systemctl_show(PH_UNIT . '.timer', ['ActiveState'])['ActiveState'] ?? '') === 'active';
+}
+
 function api_reintentar(): array
 {
     $tipo = (string)($_POST['tipo'] ?? ''); $num = (string)($_POST['numero'] ?? '');
-    $dry = ($_POST['dry_run'] ?? '1') !== '0' || !file_exists(PH_GUARD);    // antes del corte SIEMPRE es simulacion
+    if (!ph_servicio_activo()) return ['ok' => false, 'error' => 'El servicio de envio esta detenido: inicielo para poder reintentar documentos'];
     $st = ph_db()->prepare("SELECT RTRIM(ESTADO) ESTADO, ENVIADO, ACEPTADO FROM dbo.DOC_ELECTRONICO_PROCESADO WHERE TIPO_DOC = ? AND NUMERO_DOC = ?");
     $st->execute([$tipo, $num]);
     $r = $st->fetch(PDO::FETCH_ASSOC);
-    if (!$r) return ['ok' => false, 'simulacion' => $dry, 'error' => "No existe $tipo $num en DOC_ELECTRONICO_PROCESADO"];
-    if (!puede_reintentar($r)) return ['ok' => false, 'simulacion' => $dry, 'error' => "Solo se reintentan documentos en estado 'error' no enviados (estado actual: {$r['ESTADO']})"];
-    if ($dry) {
-        return ['ok' => true, 'simulacion' => true, 'mensaje' => "SIMULACION: $tipo $num quedaria con ESTADO='reintentar' y lo tomaria el proximo lote del servicio" . (file_exists(PH_GUARD) ? '' : ' (bloqueado: aun no se realiza el corte, no se modifica nada)')];
-    }
-    $db = ph_db();
-    $u = $db->prepare("UPDATE dbo.DOC_ELECTRONICO_PROCESADO SET ESTADO = 'reintentar', ULTIMO_ERROR = LEFT(? + ISNULL(ULTIMO_ERROR, ''), 4000)
+    if (!$r) return ['ok' => false, 'error' => "No existe $tipo $num en DOC_ELECTRONICO_PROCESADO"];
+    if (!puede_reintentar($r)) return ['ok' => false, 'error' => "Solo se reintentan documentos en estado 'error' no enviados (estado actual: {$r['ESTADO']})"];
+    $u = ph_db()->prepare("UPDATE dbo.DOC_ELECTRONICO_PROCESADO SET ESTADO = 'reintentar', ULTIMO_ERROR = LEFT(? + ISNULL(ULTIMO_ERROR, ''), 4000)
         WHERE TIPO_DOC = ? AND NUMERO_DOC = ? AND ESTADO = 'error' AND ISNULL(ENVIADO, 'N') <> 'S' AND ISNULL(ACEPTADO, 'N') <> 'S'");
-    $u->execute(['[Reintento solicitado en panel por ' . $_SERVER['REMOTE_USER'] . ' ' . date('Y-m-d H:i:s') . '] ', $tipo, $num]);
+    $u->execute(['[Reintento solicitado en panel por ' . ph_user() . ' ' . date('Y-m-d H:i:s') . '] ', $tipo, $num]);
     $n = $u->rowCount();
-    $b = $db->prepare("INSERT INTO dbo.BITACORA (SESSION_ID, TIPO, TEXTO, FECHA_HORA, DOCUMENTO, TIPO_DOCUMENTO) VALUES ('panel-hacienda', 'Info', ?, SYSDATETIME(), ?, ?)");
-    $b->execute(['Panel: reintento solicitado por ' . $_SERVER['REMOTE_USER'], $num, $tipo]);
-    return ['ok' => $n === 1, 'simulacion' => false, 'mensaje' => $n === 1 ? "$tipo $num marcado para reintento; se enviara en el proximo lote si el servicio esta iniciado" : 'No se actualizo (el estado cambio)'];
+    if ($n === 1) ph_accion("reintento solicitado $tipo $num", 'Info', $num, $tipo);
+    return ['ok' => $n === 1, 'mensaje' => $n === 1 ? "$tipo $num marcado para reintento; lo enviara el proximo lote" : 'No se actualizo (el estado cambio)'];
 }
 
 function api_servicio(): array
 {
     $acc = $_POST['accion'] ?? '';
     if (!in_array($acc, ['start', 'stop'], true)) return ['ok' => false, 'error' => 'Accion invalida'];
-    if ($acc === 'start' && !file_exists(PH_GUARD)) {
-        return ['ok' => false, 'error' => 'Bloqueado: el corte no se ha realizado (falta ' . PH_GUARD . '). El envio sigue en el servidor Windows 172.16.12.3; iniciar aqui duplicaria comprobantes.'];
+    if ($acc === 'start' && ($_POST['confirmar'] ?? '') !== 'INICIAR') {
+        ph_accion_log('servicio: inicio rechazado (sin palabra de confirmacion)');
+        return ['ok' => false, 'error' => 'Escriba INICIAR para confirmar el inicio del envio'];
     }
+    // start: enable --now (persiste tras reinicio) / stop: disable --now
+    $cmd = $acc === 'start' ? 'enable --now' : 'disable --now';
     $out = []; $rc = 0;
-    exec('/usr/bin/sudo -n /usr/bin/systemctl ' . $acc . ' ' . escapeshellarg(PH_UNIT . '.timer') . ' 2>&1', $out, $rc);
-    error_log('panel-hacienda: ' . $_SERVER['REMOTE_USER'] . " systemctl $acc " . PH_UNIT . ".timer rc=$rc");
-    return ['ok' => $rc === 0, 'rc' => $rc, 'salida' => implode("\n", $out), 'timer' => ph_systemctl_show(PH_UNIT . '.timer', ['ActiveState'])];
+    exec('/usr/bin/sudo -n /usr/bin/systemctl ' . $cmd . ' ' . escapeshellarg(PH_UNIT . '.timer') . ' 2>&1', $out, $rc);
+    ph_accion('servicio: ' . ($acc === 'start' ? 'INICIADO y habilitado' : 'DETENIDO y deshabilitado') . " (systemctl $cmd " . PH_UNIT . ".timer rc=$rc)", $rc === 0 ? 'Info' : 'Error');
+    return ['ok' => $rc === 0, 'rc' => $rc, 'salida' => implode("\n", $out), 'timer' => ph_systemctl_show(PH_UNIT . '.timer', ['ActiveState', 'UnitFileState'])];
+}
+
+function api_grafico(): array
+{
+    $dias = in_array((int)($_GET['dias'] ?? 30), [14, 30, 90], true) ? (int)$_GET['dias'] : 30;
+    $rows = ph_db()->query("SELECT CONVERT(varchar(10), CAST(FECHA_HORA AS date), 120) dia,
+        SUM(CASE WHEN ESTADO LIKE 'aceptado%' THEN 1 ELSE 0 END) aceptados,
+        SUM(CASE WHEN ESTADO = 'rechazado' THEN 1 ELSE 0 END) rechazados,
+        SUM(CASE WHEN ESTADO LIKE 'aceptado%' OR ESTADO = 'rechazado' THEN 0 ELSE 1 END) otros
+        FROM dbo.DOC_ELECTRONICO_PROCESADO WHERE FECHA_HORA >= DATEADD(day, -$dias, CAST(GETDATE() AS date))
+        GROUP BY CAST(FECHA_HORA AS date) ORDER BY 1")->fetchAll(PDO::FETCH_ASSOC);
+    return ['ok' => true, 'rows' => array_map(fn($r) => ['dia' => $r['dia'], 'aceptados' => (int)$r['aceptados'], 'rechazados' => (int)$r['rechazados'], 'otros' => (int)$r['otros']], $rows)];
 }
 
 /* ---------------- PDF / XML ---------------- */
@@ -433,7 +457,7 @@ function api_rutas_aplicar(): array
     try {
         [$act, $pr] = rutas_actuales($cols);
         $info = ph_db_info();
-        $bk = ['fecha' => date('Y-m-d H:i:s'), 'usuario' => $_SERVER['REMOTE_USER'], 'bd' => $info, 'compania' => $act, 'proceso' => $pr, 'nuevos' => $cols];
+        $bk = ['fecha' => date('Y-m-d H:i:s'), 'usuario' => ph_user(), 'bd' => $info, 'compania' => $act, 'proceso' => $pr, 'nuevos' => $cols];
         $file = PH_DATA . '/rutas-respaldo-' . date('Ymd-His') . '.json';
         if (file_put_contents($file, json_encode($bk, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) === false) throw new RuntimeException('No se pudo guardar el respaldo');
         chmod($file, 0600);
@@ -442,8 +466,6 @@ function api_rutas_aplicar(): array
         $u->execute(array_values($cols));
         if ($u->rowCount() !== 1) throw new RuntimeException('UPDATE afecto ' . $u->rowCount() . ' filas (se esperaba 1)');
         if ($proceso) $db->exec("UPDATE dbo.PROCESO SET EN_PROCESO = 'NO'");
-        $db->prepare("INSERT INTO dbo.BITACORA (SESSION_ID, TIPO, TEXTO, FECHA_HORA, DOCUMENTO, TIPO_DOCUMENTO) VALUES ('panel-hacienda', 'Info', ?, SYSDATETIME(), '', '')")
-           ->execute(['Panel: rutas Linux aplicadas (corte-hacienda.sql) por ' . $_SERVER['REMOTE_USER'] . '; respaldo ' . basename($file)]);
         $db->commit();
     } catch (Throwable $e) {
         if ($db->inTransaction()) $db->rollBack();
@@ -451,7 +473,7 @@ function api_rutas_aplicar(): array
         ph_accion_log('rutas: ERROR al aplicar: ' . $e->getMessage());
         throw $e;
     }
-    ph_accion_log("rutas: aplicadas en {$info['host']}/{$info['database']}; respaldo " . basename($file));
+    ph_accion("rutas: aplicadas en {$info['host']}/{$info['database']}; respaldo " . basename($file));
     return ['ok' => true, 'mensaje' => 'Rutas aplicadas; respaldo ' . basename($file)] + api_rutas_preview();
 }
 
@@ -472,17 +494,15 @@ function api_rutas_revertir(): array
         $u->execute(array_values($cols));
         if ($u->rowCount() !== 1) throw new RuntimeException('UPDATE afecto ' . $u->rowCount() . ' filas');
         if ($bk['proceso'] !== null) $db->prepare('UPDATE dbo.PROCESO SET EN_PROCESO = ?')->execute([$bk['proceso']]);
-        $db->prepare("INSERT INTO dbo.BITACORA (SESSION_ID, TIPO, TEXTO, FECHA_HORA, DOCUMENTO, TIPO_DOCUMENTO) VALUES ('panel-hacienda', 'Info', ?, SYSDATETIME(), '', '')")
-           ->execute(['Panel: rutas revertidas desde ' . basename($file) . ' por ' . $_SERVER['REMOTE_USER']]);
         $db->commit();
     } catch (Throwable $e) {
         if ($db->inTransaction()) $db->rollBack();
         ph_accion_log('rutas: ERROR al revertir: ' . $e->getMessage());
         throw $e;
     }
-    $bk['revertido'] = date('Y-m-d H:i:s') . ' por ' . $_SERVER['REMOTE_USER'];
+    $bk['revertido'] = date('Y-m-d H:i:s') . ' por ' . ph_user();
     file_put_contents($file, json_encode($bk, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    ph_accion_log("rutas: revertidas en {$info['host']}/{$info['database']} desde " . basename($file));
+    ph_accion("rutas: revertidas en {$info['host']}/{$info['database']} desde " . basename($file));
     return ['ok' => true, 'mensaje' => 'Valores anteriores restaurados desde ' . basename($file)] + api_rutas_preview();
 }
 
@@ -504,7 +524,7 @@ function api_dedata_sync(): array
     $e = api_dedata_estado();
     if ($e['en_curso']) return ['ok' => false, 'error' => 'Ya hay una sincronizacion en curso'];
     exec('/usr/bin/sudo -n ' . PH_SYNC_BIN . ' > /dev/null 2>&1 &', $o, $rc);
-    ph_accion_log('dedata: sincronizacion iniciada');
+    ph_accion('dedata: sincronizacion iniciada');
     usleep(1500000);
     return ['ok' => $rc === 0, 'mensaje' => 'Sincronizacion iniciada en segundo plano'] + api_dedata_estado();
 }

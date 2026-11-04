@@ -7,7 +7,6 @@
 declare(strict_types=1);
 
 const PH_UNIT        = 'paticas-hacienda-sender';
-const PH_GUARD       = '/etc/lospaticas/hacienda-sender.CORTE-REALIZADO';
 const PH_API44       = '/var/www/lospaticas/sistema/fe/API/api44';
 const PH_SENDER_LOG  = PH_API44 . '/logs/sender.log';
 const PH_ERRORS_LOG  = '/var/www/lospaticas/sistema/fe/API/api/errors/_errors.log';
@@ -20,22 +19,58 @@ const PH_SYNC_LOG    = '/var/log/paticas-dedata-sync.log';
 const RUTAS_COLS = '/^(IDP_(PROD|STAG)_(CERT_URL|RUTA_CERT|FILE_CERT)|XML_PATH|PDF_PATH|TEMPLATE_PATH)$/';
 const PH_SYNC_BIN    = '/usr/local/sbin/paticas-dedata-sync';
 
-if (empty($_SERVER['REMOTE_USER'])) {           // nginx debe autenticar; si no, no se sirve nada
-    http_response_code(403);
-    exit('Acceso no autorizado');
-}
+const PH_IDLE_SEG    = 1800;      // cierre de sesion por inactividad (30 min)
+const PH_MAX_SEG     = 43200;     // duracion maxima de una sesion (12 h)
+const PH_FALLOS_MAX  = 5;         // intentos fallidos antes de bloquear
+const PH_BLOQUEO_SEG = 900;       // bloqueo de 15 min por usuario y por IP
+// Grupos de tbl_SEC_Grupos que pueden entrar. Vacio = cualquier usuario de tbl_SEC_Usuarios.
+// Propuesta: [1] (01-Administradores); hoy los 7 usuarios son del grupo 1.
+const PH_GRUPOS_PERMITIDOS = [];
+
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');
 header('Referrer-Policy: same-origin');
 
+ini_set('session.use_strict_mode', '1');
+ini_set('session.use_only_cookies', '1');
+ini_set('session.gc_maxlifetime', (string)PH_MAX_SEG);
 session_name('PANELHACIENDA');
-session_set_cookie_params(['path' => '/panel-hacienda/', 'httponly' => true, 'samesite' => 'Strict',
-    'secure' => (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')]);
+session_set_cookie_params(['lifetime' => 0, 'path' => '/panel-hacienda/', 'httponly' => true, 'samesite' => 'Strict', 'secure' => true]);
 session_start();
 if (empty($_SESSION['csrf'])) {
     $_SESSION['csrf'] = bin2hex(random_bytes(32));
 }
+// Expiracion por inactividad / duracion maxima
+if (!empty($_SESSION['usuario'])) {
+    $now = time();
+    if ($now - ($_SESSION['ultimo'] ?? 0) > PH_IDLE_SEG || $now - ($_SESSION['inicio'] ?? 0) > PH_MAX_SEG) {
+        $u = $_SESSION['usuario'];
+        $_SESSION = ['csrf' => bin2hex(random_bytes(32))];
+        session_regenerate_id(true);
+        $GLOBALS['ph_expirada'] = $u;
+    } else {
+        $_SESSION['ultimo'] = $now;
+    }
+}
+
+function ph_user(): string { return (string)($_SESSION['usuario'] ?? ''); }
+function ph_ip(): string { return (string)($_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['REMOTE_ADDR'] ?? '?'); }
+/** Clave de bloqueo por origen: IPv4 completa o prefijo /64 en IPv6 (un mismo cliente rota dentro de su /64). */
+function ph_ip_clave(): string
+{
+    $ip = ph_ip();
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) return substr(bin2hex(inet_pton($ip)), 0, 16) . '::/64';
+    return $ip;
+}
+
+function ph_require_login(): void
+{
+    if (ph_user() === '') {
+        ph_json(['ok' => false, 'error' => isset($GLOBALS['ph_expirada']) ? 'La sesion expiro por inactividad' : 'No autenticado', 'csrf' => $_SESSION['csrf']], 401);
+    }
+}
+
 date_default_timezone_set('America/Costa_Rica');
 
 function ph_db(): PDO
@@ -81,7 +116,7 @@ function ph_json($data, int $code = 200): never
 function ph_require_post(): void
 {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !hash_equals($_SESSION['csrf'], (string)($_POST['csrf'] ?? ''))) {
-        ph_json(['ok' => false, 'error' => 'Solicitud invalida (CSRF)'], 403);
+        ph_json(['ok' => false, 'error' => 'Solicitud invalida (CSRF). Recargue la pagina.'], 403);
     }
 }
 
@@ -165,8 +200,86 @@ function ph_tail(string $file, int $limit, ?int $before, ?int $since, callable $
 function ph_accion_log(string $msg): void
 {
     if (!is_dir(PH_DATA)) @mkdir(PH_DATA, 0700, true);
-    @file_put_contents(PH_DATA . '/acciones.log', date('Y-m-d H:i:s') . ' [' . ($_SERVER['REMOTE_USER'] ?? '?') . '] ' . $msg . "\n", FILE_APPEND | LOCK_EX);
-    error_log('panel-hacienda: ' . ($_SERVER['REMOTE_USER'] ?? '?') . ' ' . $msg);
+    @file_put_contents(PH_DATA . '/acciones.log', date('Y-m-d H:i:s') . ' [' . (ph_user() ?: '-') . '] ' . $msg . "\n", FILE_APPEND | LOCK_EX);
+    error_log('panel-hacienda: ' . (ph_user() ?: '-') . ' ' . $msg);
+}
+
+/** Registra en dbo.BITACORA (SESSION_ID 'panel-hacienda'); nunca falla la peticion. */
+function ph_bitacora(string $texto, string $nivel = 'Info', string $doc = '', string $tipo = ''): void
+{
+    try {
+        ph_db()->prepare("INSERT INTO dbo.BITACORA (SESSION_ID, TIPO, TEXTO, FECHA_HORA, DOCUMENTO, TIPO_DOCUMENTO) VALUES ('panel-hacienda', ?, ?, SYSDATETIME(), ?, ?)")
+            ->execute([$nivel, mb_substr('Panel: ' . $texto, 0, 4000), $doc, $tipo]);
+    } catch (Throwable $e) {
+        error_log('panel-hacienda: bitacora: ' . $e->getMessage());
+    }
+}
+
+function ph_accion(string $msg, string $nivel = 'Info', string $doc = '', string $tipo = ''): void
+{
+    ph_accion_log($msg);
+    ph_bitacora($msg . ' [usuario ' . (ph_user() ?: '-') . ', IP ' . ph_ip() . ']', $nivel, $doc, $tipo);
+}
+
+/* ---------------- Login contra dbo.tbl_SEC_Usuarios ---------------- */
+function ph_fallos_archivo(): string { return PH_DATA . '/login-fallos.json'; }
+
+/** Lee/actualiza contadores de fallos con bloqueo de archivo. $fn recibe el arreglo por referencia. */
+function ph_fallos(callable $fn)
+{
+    if (!is_dir(PH_DATA)) @mkdir(PH_DATA, 0700, true);
+    $fh = fopen(ph_fallos_archivo(), 'c+');
+    flock($fh, LOCK_EX);
+    $d = json_decode((string)stream_get_contents($fh), true) ?: [];
+    $now = time();
+    foreach ($d as $k => $v) if ($now - ($v['t'] ?? 0) > PH_BLOQUEO_SEG) unset($d[$k]);
+    $r = $fn($d);
+    ftruncate($fh, 0); rewind($fh); fwrite($fh, json_encode($d)); fflush($fh);
+    flock($fh, LOCK_UN); fclose($fh);
+    @chmod(ph_fallos_archivo(), 0600);
+    return $r;
+}
+
+function ph_login(string $usuario, string $password): array
+{
+    $usuario = trim($usuario);
+    if ($usuario === '' || $password === '' || mb_strlen($usuario) > 30 || strlen($password) > 64) return ['ok' => false, 'error' => 'Usuario o contraseña incorrectos'];
+    $kU = 'u:' . mb_strtolower($usuario); $kI = 'ip:' . ph_ip_clave();
+    $bloq = ph_fallos(fn(array &$d) => max($d[$kU]['n'] ?? 0, $d[$kI]['n'] ?? 0) >= PH_FALLOS_MAX);
+    if ($bloq) {
+        ph_accion_log("login BLOQUEADO usuario=$usuario ip=" . ph_ip());
+        return ['ok' => false, 'error' => 'Demasiados intentos fallidos. Intente de nuevo en 15 minutos.'];
+    }
+    // Mismo criterio que la tabla del sistema PATICAS: Username y Password (char, texto plano) recortados.
+    // Usuario: comparacion de la BD (Modern_Spanish_CI_AS, sin distinguir mayusculas). Contraseña: exacta (hash_equals).
+    $st = ph_db()->prepare('SELECT idUsuario, idGrupo, RTRIM(Descripcion) AS nombre, RTRIM(Username) AS usuario, RTRIM(Password) AS pw FROM dbo.tbl_SEC_Usuarios WHERE RTRIM(Username) = ?');
+    $st->execute([$usuario]);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+    $ok = null;
+    foreach ($rows as $r) {
+        if (hash_equals((string)$r['pw'], $password)) { $ok = $r; break; }
+    }
+    unset($rows, $password);
+    if ($ok && PH_GRUPOS_PERMITIDOS && !in_array((int)$ok['idGrupo'], PH_GRUPOS_PERMITIDOS, true)) {
+        ph_accion_log("login RECHAZADO (grupo {$ok['idGrupo']} no permitido) usuario=$usuario ip=" . ph_ip());
+        ph_bitacora("login rechazado por grupo: $usuario", 'Warning');
+        return ['ok' => false, 'error' => 'Su usuario no tiene acceso a este panel'];
+    }
+    if (!$ok) {
+        ph_fallos(function (array &$d) use ($kU, $kI) { foreach ([$kU, $kI] as $k) $d[$k] = ['n' => ($d[$k]['n'] ?? 0) + 1, 't' => time()]; });
+        ph_accion_log("login FALLIDO usuario=$usuario ip=" . ph_ip());
+        ph_bitacora("login fallido: $usuario (IP " . ph_ip() . ')', 'Warning');
+        return ['ok' => false, 'error' => 'Usuario o contraseña incorrectos'];
+    }
+    ph_fallos(function (array &$d) use ($kU) { unset($d[$kU]); });
+    session_regenerate_id(true);
+    $_SESSION['usuario'] = ph_utf8($ok['usuario']);
+    $_SESSION['nombre'] = ph_utf8($ok['nombre']);
+    $_SESSION['grupo'] = (int)$ok['idGrupo'];
+    $_SESSION['inicio'] = $_SESSION['ultimo'] = time();
+    $_SESSION['csrf'] = bin2hex(random_bytes(32));
+    ph_accion('login correcto');
+    return ['ok' => true, 'usuario' => $_SESSION['usuario'], 'nombre' => $_SESSION['nombre'], 'csrf' => $_SESSION['csrf']];
 }
 
 /**

@@ -7,16 +7,39 @@
 - Certificado de producción: `api44/files/certificado/310109035837.p12` (abre con el PIN de producción guardado en la BD; vence 2027-10-20).
 - XML/PDF generados: `/var/lib/lospaticas/fe/DEData`.
 - systemd: `paticas-hacienda-sender.service` (oneshot, usuario www-data, flock) + `paticas-hacienda-sender.timer` (cada 60 s).
-  Creados **deshabilitados y detenidos**. El servicio tiene `ConditionPathExists=/etc/lospaticas/hacienda-sender.CORTE-REALIZADO`:
-  mientras ese archivo no exista, no corre aunque alguien inicie el timer.
+  Creados **deshabilitados y detenidos**. Ya no depende de ningún archivo de bloqueo: el estado lo define únicamente
+  el usuario con **Iniciar / Detener** en el panel (o `systemctl enable|disable --now` como root).
 - Variables de entorno opcionales: `/etc/lospaticas/api44.env` (root 600, solo nombres).
 - SQL de rutas Linux para el corte: `/etc/lospaticas/corte-hacienda.sql` (NO ejecutado).
-- Panel: `https://sistema.lospaticas.com/panel-hacienda/` (nginx auth_basic; credenciales en `/etc/lospaticas/panel-hacienda.credentials`, root 600).
-  www-data solo puede `systemctl start|stop paticas-hacienda-sender.timer` (`/etc/sudoers.d/paticas-hacienda-panel`).
+- Panel: `https://sistema.lospaticas.com/panel-hacienda/` (login con los usuarios del sistema, ver abajo).
+  www-data solo puede `systemctl enable --now|disable --now paticas-hacienda-sender.timer` y `paticas-dedata-sync`
+  (`/etc/sudoers.d/paticas-hacienda-panel`, argumentos exactos).
+
+## Acceso (login)
+- Usuarios de `inventario.dbo.tbl_SEC_Usuarios` (la BD de `/etc/lospaticas/db.php`), los mismos del sistema PATICAS de escritorio.
+  La tabla guarda `Username`/`Password` en texto plano (char 30/15) y no tiene columna de "activo": se compara
+  `RTRIM(Username)` (sin distinguir mayúsculas, collation de la BD) y la contraseña exacta con `hash_equals`.
+  Para quitar el acceso a alguien, borrarlo o cambiarle la contraseña en el sistema.
+- Restricción por grupo opcional: `PH_GRUPOS_PERMITIDOS` en `lib.php` (vacío = todos; propuesta `[1]` = 01-Administradores;
+  hoy todos los usuarios son grupo 1).
+- Sesión PHP `PANELHACIENDA`: cookie Secure + HttpOnly + SameSite=Strict (path `/panel-hacienda/`), `session_regenerate_id` al entrar,
+  cierre por inactividad 30 min y máximo 12 h, CSRF en todo POST (login incluido).
+- Bloqueo: 5 fallos por usuario o por IP (IP real vía Cloudflare) → 15 min (`/var/lib/lospaticas/panel/login-fallos.json`).
+- Auditoría: login correcto/fallido/bloqueado, logout y cada acción quedan en `/var/lib/lospaticas/panel/acciones.log`
+  y en `dbo.BITACORA` (`SESSION_ID='panel-hacienda'`) con usuario e IP. Sin sesión, `api.php` responde 401 (salvo `sesion`/`login`).
+
+## Interfaz (React)
+- Código fuente: `panel-hacienda/frontend/` (Vite + React 18 + TypeScript + Tailwind, componentes estilo shadcn, lucide, recharts).
+  nginx no sirve esa carpeta.
+- **El build se versiona**: `panel-hacienda/index.html` y `panel-hacienda/assets/` son la salida de `npm run build`
+  (así el servidor no necesita Node). Para cambiar la interfaz: `cd panel-hacienda/frontend && npm ci && npm run build`
+  y luego copiar `dist/*` a `panel-hacienda/` (borrando los `assets/index-*` anteriores) y hacer commit de ambos.
+- Backend JSON: `api.php` + `lib.php`.
 
 ## Reintentar
 Solo documentos con `ESTADO='error'`, `ENVIADO<>'S'`, `ACEPTADO<>'S'`: se marca `ESTADO='reintentar'` y el siguiente lote de
-`ProcesarPendientesEnvio` lo vuelve a tomar (la consulta excluye solo 'rechazado' y 'error'). Antes del corte, siempre es simulación.
+`ProcesarPendientesEnvio` lo vuelve a tomar (la consulta excluye solo 'rechazado' y 'error'). Es un cambio real en la BD y solo se
+permite con el servicio **iniciado** (con el servicio detenido el botón está deshabilitado y la API lo rechaza).
 Los rechazados por Hacienda no se reintentan (requieren documento nuevo / nota de crédito).
 
 ## Corte (un solo servidor enviando)
@@ -25,10 +48,9 @@ Los rechazados por Hacienda no se reintentan (requieren documento nuevo / nota d
 2. Respaldo final de `inventario` en .3 → restaurar en 172.16.12.100 (o apuntar `/etc/lospaticas/db.php` a la BD definitiva).
 3. Ejecutar `/etc/lospaticas/corte-hacienda.sql` en esa BD (rutas del certificado, XML/PDF y plantillas a Linux).
 4. Copiar históricos si se requieren: `C:\Backups\DEData` → `/var/lib/lospaticas/fe/DEData` (www-data).
-5. `sudo touch /etc/lospaticas/hacienda-sender.CORTE-REALIZADO`
-6. `sudo systemctl enable --now paticas-hacienda-sender.timer` (o "Iniciar" en el panel; el panel no habilita en el arranque).
-7. Vigilar el panel (Registro en vivo / Comprobantes). Volver atrás: `systemctl disable --now paticas-hacienda-sender.timer`,
-   `rm /etc/lospaticas/hacienda-sender.CORTE-REALIZADO`, rehabilitar la tarea en Windows.
+5. Panel → Servicio → **Iniciar** (escribir INICIAR): habilita y arranca el timer (persiste tras reinicios).
+6. Vigilar el panel (Registro en vivo / Comprobantes). Volver atrás: **Detener** en el panel
+   (`systemctl disable --now paticas-hacienda-sender.timer`) y rehabilitar la tarea en Windows.
 Nunca deben estar activos a la vez la tarea de Windows y el timer de .106.
 
 ## DEData (XML/PDF)
