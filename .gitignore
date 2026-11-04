@@ -12,3 +12,4 @@ node_modules/
 *.iso
 *.msi
 *.bak
+/subida_cat/
