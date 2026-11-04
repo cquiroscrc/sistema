@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
 
+require_once __DIR__ . '/buzon/buzon-lib.php';
 $a = $_GET['a'] ?? '';
 try {
     // Sin sesion solo se permite: sesion (token CSRF y estado), login y logout.
@@ -537,7 +538,6 @@ function api_dedata_sync(): array
 }
 
 /* ---------------- Buzon FE (facturaelectronica@lospaticas.com, solo lectura) ---------------- */
-require_once __DIR__ . '/buzon/buzon-lib.php';
 
 function bz_tablas_ok(): bool
 {
@@ -593,8 +593,8 @@ function bz_fila(array $r): array
         'xml' => (bool)$r['TIENE_XML'], 'respuesta' => (bool)$r['TIENE_RESPUESTA'], 'pdf' => (bool)$r['TIENE_PDF']];
 }
 
-const BZ_COLS = 'd.ID, d.CLAVE, d.TIPO_DOC, d.CONSECUTIVO, CONVERT(varchar(19), d.FECHA_EMISION, 120) FECHA_EMISION, d.NOMBRE, d.NIT_EMISOR, d.NOMBRE_RECEPTOR, d.NIT_RECEPTOR,
-    d.PARA_LOS_PATICAS, d.MONEDA, d.TOTALCOMPROBANTE, d.TOTALIMPUESTO, d.ESTADO_HACIENDA, d.TIENE_XML, d.TIENE_RESPUESTA, d.TIENE_PDF';
+function bz_cols(): string { return 'd.ID, d.CLAVE, d.TIPO_DOC, d.CONSECUTIVO, CONVERT(varchar(19), d.FECHA_EMISION, 120) FECHA_EMISION, d.NOMBRE, d.NIT_EMISOR, d.NOMBRE_RECEPTOR, d.NIT_RECEPTOR,
+    d.PARA_LOS_PATICAS, d.MONEDA, d.TOTALCOMPROBANTE, d.TOTALIMPUESTO, d.ESTADO_HACIENDA, d.TIENE_XML, d.TIENE_RESPUESTA, d.TIENE_PDF'; }
 
 function api_buzon_docs(): array
 {
@@ -603,7 +603,7 @@ function api_buzon_docs(): array
     $size = min(100, max(10, (int)($_GET['size'] ?? 25))); $page = max(1, (int)($_GET['page'] ?? 1));
     $st = ph_db()->prepare("SELECT COUNT(*) FROM dbo.FE_BUZON_DOCUMENTOS d WHERE $w"); $st->execute($p); $total = (int)$st->fetchColumn();
     $off = ($page - 1) * $size;
-    $st = ph_db()->prepare('SELECT ' . BZ_COLS . " FROM dbo.FE_BUZON_DOCUMENTOS d WHERE $w ORDER BY d.FECHA_EMISION DESC, d.ID DESC OFFSET $off ROWS FETCH NEXT $size ROWS ONLY");
+    $st = ph_db()->prepare('SELECT ' . bz_cols() . " FROM dbo.FE_BUZON_DOCUMENTOS d WHERE $w ORDER BY d.FECHA_EMISION DESC, d.ID DESC OFFSET $off ROWS FETCH NEXT $size ROWS ONLY");
     $st->execute($p);
     return ['ok' => true, 'total' => $total, 'page' => $page, 'size' => $size, 'rows' => array_map('bz_fila', $st->fetchAll(PDO::FETCH_ASSOC))];
 }
