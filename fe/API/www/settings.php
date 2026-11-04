@@ -25,14 +25,16 @@ global $config;
 #
 #####################################################################################
 # Database name
-$config['db']['name'] = 'inventario';
+// Migracion 2026-11: credenciales en /etc/lospaticas/db.php (SQL Server 172.16.12.100, login paticas_app)
+$__lp_db = require '/etc/lospaticas/db.php';
+$config['db']['name'] = $__lp_db['database'];
 # Database password
-$config['db']['pwd'] = 'PLUMA';
+$config['db']['pwd'] = $__lp_db['password']; // antes: password de sa en texto plano
 # Database user name
-$config['db']['user'] ='sa';
+$config['db']['user'] = $__lp_db['user']; // antes: sa
 # Database host
 //$config['db']['host'] ='170.81.32.82';
-$config['db']['host'] ='172.16.12.3';
+$config['db']['host'] = $__lp_db['host'] . ',' . $__lp_db['port']; // antes: 172.16.12.3
 ##############################################################################
 #
 # Crypto Keys
