@@ -5,15 +5,15 @@ import { cn, fmtMoneda, fmtNum } from '../lib/utils';
 import { Button, Card, CardBody, CardHeader, CardTitle, Drawer, Empty, EstadoBadge, Input, Label, Pill, Select, Spinner, Switch, Tabs, useToast } from '../components/ui';
 
 type Fila = { id: number; clave: string; tipo: string | null; consecutivo: string | null; fecha: string | null; emisor: string; nit_emisor: string | null; receptor: string;
-  para: boolean; moneda: string | null; total: number | null; impuesto: number | null; estado: string; xml: boolean; respuesta: boolean; pdf: boolean };
+  para: boolean; moneda: string | null; total: number | null; impuesto: number | null; estado: string; xml: boolean; respuesta: boolean; pdf: boolean; buzones: string };
 const TIPOS: Record<string, string> = { FE: 'Factura', TE: 'Tiquete', NC: 'Nota de crédito', ND: 'Nota de débito', FEC: 'Factura de compra', FEE: 'Exportación', REP: 'Recibo de pago' };
-const vacio = { q: '', tipo: '', estado: '', desde: '', hasta: '', para: '' };
+const vacio = { cuenta: '', q: '', tipo: '', estado: '', desde: '', hasta: '', para: '' };
 
-function EstadoSync({ onCambio }: { onCambio: () => void }) {
+function EstadoSync({ onCambio, cuenta }: { onCambio: () => void; cuenta: 'info' | 'facturaelectronica' }) {
   const toast = useToast();
   const [e, setE] = useState<any>(null);
   const [lanzando, setLanzando] = useState(false);
-  const cargar = useCallback(() => api('buzon_estado').then(j => j.ok && setE(j)).catch(() => {}), []);
+  const cargar = useCallback(() => api('buzon_estado', { cuenta }).then(j => j.ok && setE(j)).catch(() => {}), [cuenta]);
   useEffect(() => { cargar(); }, [cargar]);
   const corriendo = !!e && (e.en_curso || e.estado?.estado === 'en curso');
   const antes = useRef(corriendo);
@@ -21,7 +21,7 @@ function EstadoSync({ onCambio }: { onCambio: () => void }) {
   useEffect(() => { if (antes.current && !corriendo) onCambio(); antes.current = corriendo; }, [corriendo, onCambio]);
   const sync = async () => {
     setLanzando(true);
-    try { const j = await api('buzon_sync', {}, {}); toast(j.ok ? 'ok' : 'error', j.mensaje || j.error); if (j.estado) setE(j); }
+    try { const j = await api('buzon_sync', {}, { cuenta }); toast(j.ok ? 'ok' : 'error', j.mensaje || j.error); if (j.estado) setE(j); }
     finally { setLanzando(false); }
   };
   const s = e?.estado ?? {};
@@ -30,7 +30,7 @@ function EstadoSync({ onCambio }: { onCambio: () => void }) {
     <CardHeader>
       <div className="flex min-w-0 items-center gap-3">
         <div className="rounded-lg bg-primary/10 p-2 text-primary"><Mail className="h-5 w-5" /></div>
-        <div className="min-w-0"><CardTitle>{cfg.usuario || 'facturaelectronica@lospaticas.com'}</CardTitle>
+        <div className="min-w-0"><CardTitle>{cfg.usuario || `${cuenta}@lospaticas.com`}</CardTitle>
           <p className="truncate text-xs text-muted-foreground">IMAP {cfg.host || 'mail.lospaticas.com'}:{cfg.port || 993} · solo lectura · carpetas {cfg.carpetas_cfg || 'INBOX'} · cada 5 min ({e?.timer?.ActiveState === 'active' ? 'timer activo' : 'timer inactivo'})</p></div>
       </div>
       <div className="flex items-center gap-2">
@@ -63,7 +63,7 @@ function Kpi({ titulo, valor, sub, icon: I }: { titulo: string; valor: React.Rea
 }
 
 function Correos() {
-  const [f, setF] = useState({ q: '', estado: '' });
+  const [f, setF] = useState({ q: '', estado: '', cuenta: '' });
   const [d, setD] = useState<any>(null); const [page, setPage] = useState(1);
   const cargar = useCallback((p = 1, x = f) => { setD(null); setPage(p); api('buzon_correos', { ...x, page: p, size: 25 }).then(setD).catch(() => setD({ ok: false })); }, [f]);
   useEffect(() => { cargar(1); }, []); // eslint-disable-line
@@ -73,16 +73,16 @@ function Correos() {
       <div className="min-w-[14rem] flex-1"><Label>Buscar</Label><Input value={f.q} onChange={e => setF({ ...f, q: e.target.value })} placeholder="Remitente o asunto" /></div>
       <div><Label>Estado</Label><Select value={f.estado} onChange={e => setF({ ...f, estado: e.target.value })}><option value="">Todos</option>
         {['ok', 'sin_documentos', 'propio', 'duplicado', 'muy_grande', 'error'].map(x => <option key={x} value={x}>{x.replace('_', ' ')}</option>)}</Select></div>
-      <Button type="submit">Filtrar</Button>
+      <div><Label>Buzón</Label><Select value={f.cuenta} onChange={e => setF({ ...f, cuenta: e.target.value })}><option value="">Todos</option><option value="facturaelectronica">facturaelectronica@</option><option value="info">info@</option></Select></div><Button type="submit">Filtrar</Button>
     </form>
     <div className="overflow-x-auto"><table className="w-full text-sm">
-      <thead className="bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground"><tr>{['Recibido', 'Remitente', 'Asunto', 'Adjuntos', 'Docs', 'Estado'].map(h => <th key={h} className="px-4 py-3 font-medium">{h}</th>)}</tr></thead>
+      <thead className="bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground"><tr>{['Recibido', 'Remitente', 'Asunto', 'Adjuntos', 'Docs', 'Estado', 'Buzón'].map(h => <th key={h} className="px-4 py-3 font-medium">{h}</th>)}</tr></thead>
       <tbody className="divide-y">{!d ? <tr><td colSpan={6} className="p-10 text-center"><Spinner /></td></tr> : !d.ok ? <tr><td colSpan={6}><Empty>{d.error || 'No disponible'}</Empty></td></tr> : !(d.rows ?? []).length ? <tr><td colSpan={6}><Empty>Sin correos procesados todavía.</Empty></td></tr> :
         (d.rows ?? []).map((r: any) => <tr key={r.id} className="hover:bg-muted/40">
           <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted-foreground">{r.recibido}</td>
           <td className="max-w-[16rem] truncate px-4 py-2.5" title={r.remitente}>{r.remitente}</td>
           <td className="max-w-[24rem] px-4 py-2.5"><div className="truncate" title={r.asunto}>{r.asunto}</div>{r.error && <div className="truncate text-xs text-danger" title={r.error}>{r.error}</div>}</td>
-          <td className="px-4 py-2.5 tabular-nums">{r.adjuntos}</td><td className="px-4 py-2.5 tabular-nums">{r.documentos}</td><td className="px-4 py-2.5"><EstadoBadge estado={r.estado} /></td></tr>)}</tbody>
+          <td className="px-4 py-2.5 tabular-nums">{r.adjuntos}</td><td className="px-4 py-2.5 tabular-nums">{r.documentos}</td><td className="px-4 py-2.5"><EstadoBadge estado={r.estado} /></td><td className="px-4 text-xs">{r.cuenta}</td></tr>)}</tbody>
     </table></div>
     <Paginador page={page} pags={pags} total={d?.total} ir={p => cargar(p)} />
   </Card>;
@@ -123,7 +123,7 @@ function Detalle({ id, onClose }: { id: number | null; onClose: () => void }) {
           <C k="Clave" v={<span className="inline-flex items-center gap-2">{doc.CLAVE}<button onClick={() => { navigator.clipboard?.writeText(doc.CLAVE); toast('info', 'Copiado'); }} className="text-muted-foreground hover:text-foreground"><Copy className="h-3.5 w-3.5" /></button></span>} mono />
           <C k="Consecutivo" v={doc.CONSECUTIVO} mono />
           <C k="Emisor" v={`${doc.NOMBRE || ''} · ${doc.NIT_EMISOR || ''}`} /><C k="Correo emisor" v={doc.EMAIL_EMISOR} />
-          <C k="Actividad económica" v={doc.CODIGO_ACTIVIDAD} /><C k="Ingresó al buzón" v={doc.FECHA_INGRESO_F} />
+          <C k="Buzón de origen" v={(doc.BUZONES ?? []).join(', ')} /><C k="Actividad económica" v={doc.CODIGO_ACTIVIDAD} /><C k="Ingresó al buzón" v={doc.FECHA_INGRESO_F} />
         </div>
         {tot.length > 0 && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-4">{tot.map(([t, k]) => <div key={k}><div className="text-xs text-muted-foreground">{t}</div><div className="tabular-nums">{fmtMoneda(doc[k], doc.MONEDA)}</div></div>)}</div>}
         {doc.MENSAJE_HACIENDA && <div className={cn('rounded-lg border p-4 text-sm', doc.ESTADO_HACIENDA === 'rechazado' ? 'border-danger/40 bg-danger/10' : 'border-success/30 bg-success/5')}><div className="mb-1 font-medium">Mensaje de Hacienda</div><div className="whitespace-pre-wrap">{doc.MENSAJE_HACIENDA}</div></div>}
@@ -158,7 +158,7 @@ export default function BuzonFE() {
   const pags = data?.total ? Math.ceil(data.total / 25) : 1;
   const mes = k?.mes; const crc = (mes?.por_moneda ?? []).find((m: any) => m.moneda === 'CRC'); const otras = (mes?.por_moneda ?? []).filter((m: any) => m.moneda !== 'CRC');
   return <div className="space-y-6">
-    <EstadoSync onCambio={refrescar} />
+    <EstadoSync onCambio={refrescar} cuenta="facturaelectronica" /><EstadoSync onCambio={refrescar} cuenta="info" />
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Kpi titulo="Recibidos este mes" valor={fmtNum(mes?.documentos)} sub={mes ? `${fmtNum(mes.para_los_paticas)} dirigidos a Los Paticas` : ''} icon={CalendarDays} />
       <Kpi titulo="Total del mes" valor={fmtMoneda(crc?.total ?? 0, 'CRC')} sub={otras.length ? otras.map((m: any) => fmtMoneda(m.total, m.moneda)).join(' · ') : 'Notas de crédito restan'} icon={Receipt} />
@@ -171,7 +171,7 @@ export default function BuzonFE() {
         <form className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-8 [&>*]:min-w-0" onSubmit={e => { e.preventDefault(); cargar(1); }}>
           <div className="sm:col-span-2 lg:col-span-1 2xl:col-span-2"><Label>Buscar</Label><div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input className="pl-9" value={f.q} onChange={set('q')} placeholder="Emisor, cédula, clave o consecutivo" /></div></div>
-          <div><Label>Tipo</Label><Select value={f.tipo} onChange={set('tipo')}><option value="">Todos</option>{Object.entries(TIPOS).map(([k2, v]) => <option key={k2} value={k2}>{k2} · {v}</option>)}</Select></div>
+          <div><Label>Buzón</Label><Select value={f.cuenta} onChange={set('cuenta')}><option value="">Todos</option><option value="facturaelectronica">facturaelectronica@</option><option value="info">info@</option></Select></div><div><Label>Tipo</Label><Select value={f.tipo} onChange={set('tipo')}><option value="">Todos</option>{Object.entries(TIPOS).map(([k2, v]) => <option key={k2} value={k2}>{k2} · {v}</option>)}</Select></div>
           <div><Label>Estado Hacienda</Label><Select value={f.estado} onChange={set('estado')}><option value="">Todos</option><option value="aceptado">Aceptado</option><option value="aceptado_parcial">Aceptado parcial</option><option value="rechazado">Rechazado</option><option value="sin_respuesta">Sin respuesta</option></Select></div>
           <div><Label>Desde</Label><Input type="date" value={f.desde} onChange={set('desde')} /></div>
           <div><Label>Hasta</Label><Input type="date" value={f.hasta} onChange={set('hasta')} /></div>
@@ -180,13 +180,13 @@ export default function BuzonFE() {
       </CardBody></Card>
       <Card className="overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead className="bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground"><tr>{['Emisión', 'Documento', 'Emisor', 'Total', 'Estado', ''].map(h => <th key={h} className={cn('px-4 py-3 font-medium', h === 'Total' && 'text-right')}>{h}</th>)}</tr></thead>
+          <thead className="bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground"><tr>{['Emisión', 'Documento', 'Emisor', 'Buzón', 'Total', 'Estado', ''].map(h => <th key={h} className={cn('px-4 py-3 font-medium', h === 'Total' && 'text-right')}>{h}</th>)}</tr></thead>
           <tbody className="divide-y">{!data ? <tr><td colSpan={6} className="p-10 text-center"><Spinner /></td></tr> : !data.ok ? <tr><td colSpan={6}><Empty>{data.error || 'No disponible'}</Empty></td></tr> : !(data.rows ?? []).length ? <tr><td colSpan={6}><Empty>No hay comprobantes recibidos con esos filtros.</Empty></td></tr> :
             (data.rows as Fila[]).map(r => <tr key={r.id} className="cursor-pointer hover:bg-muted/40" onClick={() => setSel(r.id)}>
               <td className="whitespace-nowrap px-4 py-3 tabular-nums text-muted-foreground">{r.fecha?.slice(0, 16) || '—'}</td>
               <td className="px-4 py-3"><div className="flex items-center gap-2"><Pill>{r.tipo || '?'}</Pill><span className="font-mono text-xs">{r.consecutivo}</span></div><div className="mt-0.5 max-w-[18rem] truncate font-mono text-[11px] text-muted-foreground" title={r.clave}>{r.clave}</div></td>
               <td className="px-4 py-3"><div className="max-w-[18rem] truncate font-medium" title={r.emisor}>{r.emisor || '—'}</div><div className="text-xs text-muted-foreground">{r.nit_emisor}{r.para && <span className="ml-2 text-success">→ Los Paticas</span>}</div></td>
-              <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{fmtMoneda(r.total, r.moneda)}</td>
+              <td className="px-4 py-3 text-xs text-muted-foreground">{r.buzones?.split('@lospaticas.com').join('')}</td><td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{fmtMoneda(r.total, r.moneda)}</td>
               <td className="px-4 py-3"><EstadoBadge estado={r.estado} /></td>
               <td className="px-4 py-3">{r.pdf ? <FileText className="h-4 w-4 text-primary" /> : null}</td></tr>)}</tbody>
         </table></div>

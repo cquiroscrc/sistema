@@ -8,8 +8,10 @@ declare(strict_types=1);
  */
 
 const BZ_BASE = '/var/lib/lospaticas/fe/buzon';
-const BZ_ESTADO = '/var/lib/lospaticas/panel/buzon-estado.json';
-const BZ_LOG = '/var/lib/lospaticas/panel/buzon-sync.log';
+define('BZ_CUENTA', getenv('BUZON_CUENTA') === 'info' ? 'info' : 'facturaelectronica');
+define('BZ_ESTADO', '/var/lib/lospaticas/panel/buzon' . (BZ_CUENTA === 'info' ? '-info' : '') . '-estado.json');
+define('BZ_LOG', '/var/lib/lospaticas/panel/buzon' . (BZ_CUENTA === 'info' ? '-info' : '') . '-sync.log');
+const BZ_CUENTAS = ['facturaelectronica' => 'facturaelectronica@lospaticas.com', 'info' => 'info@lospaticas.com'];
 const BZ_TIPOS = ['FacturaElectronica' => 'FE', 'TiqueteElectronico' => 'TE', 'NotaCreditoElectronica' => 'NC',
     'NotaDebitoElectronica' => 'ND', 'FacturaElectronicaCompra' => 'FEC', 'FacturaElectronicaExportacion' => 'FEE',
     'ReciboElectronicoPago' => 'REP', 'MensajeHacienda' => 'MH', 'MensajeReceptor' => 'MR'];

@@ -59,7 +59,7 @@ require_once dirname(__DIR__) . '/db/migrar-lib.php';
 /** Tablas FE_BUZON_* presentes (se crean con las migraciones: panel-hacienda/db/migrar.php --aplicar). */
 function bz_tablas_faltantes(PDO $db): array
 {
-    return mig_faltantes($db, ['dbo.FE_BUZON_CORREOS', 'dbo.FE_BUZON_DOCUMENTOS', 'dbo.FE_BUZON_ARCHIVOS']);
+    return mig_faltantes($db, ['dbo.FE_BUZON_CORREOS', 'dbo.FE_BUZON_DOCUMENTOS', 'dbo.FE_BUZON_ARCHIVOS', 'dbo.FE_BUZON_DOC_CUENTAS']);
 }
 
 /** Guarda un archivo bajo BZ_BASE y devuelve la ruta relativa (reutiliza si ya existe identico). */
@@ -134,6 +134,10 @@ function bz_procesar(PDO $db, array $m, string $raw, int $correoId, array $propi
     foreach ($a['docs'] as $d) if ($d['clase'] === 'xml') $fechas[$d['xml']['clave']] = bz_fecha($d['xml']['fecha_emision'] ?? null);
     $ins = $db->prepare('INSERT INTO dbo.FE_BUZON_ARCHIVOS (CORREO_ID, CLAVE, CLASE, NOMBRE, ORIGEN_ZIP, RUTA, SHA256, TAMANO) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     $ya = $db->prepare('SELECT COUNT(*) FROM dbo.FE_BUZON_ARCHIVOS WHERE CLAVE = ? AND SHA256 = ?');
+    $cuenta = (string)getenv('IMAP_USER');
+    $origen = function (string $clave) use ($db, $cuenta, $correoId): void {
+        $db->prepare('IF NOT EXISTS (SELECT 1 FROM dbo.FE_BUZON_DOC_CUENTAS WHERE CLAVE = ? AND CUENTA = ?) INSERT INTO dbo.FE_BUZON_DOC_CUENTAS (CLAVE, CUENTA, CORREO_ID) VALUES (?, ?, ?)')->execute([$clave, $cuenta, $clave, $cuenta, $correoId]);
+    };
     $guardaArchivo = function (?string $clave, string $clase, array $f, string $rel) use ($db, $ins, $ya, $correoId): void {
         if ($clave) { $ya->execute([$clave, $f['sha']]); $c = (int)$ya->fetchColumn(); $ya->closeCursor(); if ($c) return; }
         $ruta = bz_guardar($rel, $f['datos']);
@@ -147,6 +151,7 @@ function bz_procesar(PDO $db, array $m, string $raw, int $correoId, array $propi
         $dir = bz_carpeta_clave($c, $fechas[$c] ?? null);
         $suf = ['xml' => '', 'respuesta' => '_respuesta', 'receptor' => '_receptor'][$d['clase']];
         bz_doc_upsert($db, $d['xml'], $correoId, $propios);
+        $origen($c);
         $guardaArchivo($c, $d['clase'], $d, "$dir/$c$suf.xml");
         $claves[$c] = true; $n++;
     }
@@ -158,6 +163,7 @@ function bz_procesar(PDO $db, array $m, string $raw, int $correoId, array $propi
             if (!(int)$e->fetchColumn()) $c = null;
         }
         if ($c) {
+            $origen($c);
             $guardaArchivo($c, 'pdf', $p, bz_carpeta_clave($c, $fechas[$c] ?? null) . "/$c.pdf");
             $db->prepare('UPDATE dbo.FE_BUZON_DOCUMENTOS SET TIENE_PDF = 1 WHERE CLAVE = ?')->execute([$c]);
         } elseif (!$a['omitidas']) {
@@ -201,7 +207,7 @@ try {
     }
 
     $pub = ['host' => $cfg['host'], 'port' => $cfg['port'], 'usuario' => $cfg['user'], 'carpetas_cfg' => $cfg['carpetas'],
-            'ignorar_emisores' => implode(',', $cfg['propios']), 'max_por_corrida' => $cfg['max']];
+            'ignorar_emisores' => implode(',', $cfg['propios']), 'max_por_corrida' => $cfg['max'], 'cuenta' => BZ_CUENTA];
     if ($cfg['user'] === '' || $pass === '') {
         bz_estado(['estado' => 'sin credenciales', 'mensaje' => 'Falta IMAP_PASS en /etc/lospaticas/buzon-fe.env', 'inicio' => date('Y-m-d H:i:s'), 'fin' => date('Y-m-d H:i:s'), 'config' => $pub]);
         if (PHP_SAPI === 'cli') fwrite(STDERR, "sin credenciales\n");
@@ -260,7 +266,7 @@ try {
                 $db->beginTransaction();
                 try {
                     $dup = false;
-                    if ($mid !== '') { $q = $db->prepare("SELECT COUNT(*) FROM dbo.FE_BUZON_CORREOS WHERE MESSAGE_ID = ? AND ESTADO IN ('ok','propio','sin_documentos')"); $q->execute([$mid]); $dup = (int)$q->fetchColumn() > 0; $q->closeCursor(); }
+                    if ($mid !== '') { $q = $db->prepare("SELECT COUNT(*) FROM dbo.FE_BUZON_CORREOS WHERE MESSAGE_ID = ? AND CUENTA = ? AND ESTADO IN ('ok','propio','sin_documentos')"); $q->execute([$mid, $cfg['user']]); $dup = (int)$q->fetchColumn() > 0; $q->closeCursor(); }
                     $grande = $h['size'] > $cfg['max_mb'] * 1048576;
                     $estado = $dup ? 'duplicado' : ($grande ? 'muy_grande' : null); $n = 0;
                     $ins = $db->prepare($insSql);

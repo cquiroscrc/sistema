@@ -546,7 +546,7 @@ function api_dedata_sync(): array
 function bz_tablas_ok(): bool
 {
     static $ok = null;
-    return $ok ??= !mig_faltantes(ph_db(), ['dbo.FE_BUZON_CORREOS', 'dbo.FE_BUZON_DOCUMENTOS', 'dbo.FE_BUZON_ARCHIVOS']);
+    return $ok ??= !mig_faltantes(ph_db(), ['dbo.FE_BUZON_CORREOS', 'dbo.FE_BUZON_DOCUMENTOS', 'dbo.FE_BUZON_ARCHIVOS', 'dbo.FE_BUZON_DOC_CUENTAS']);
 }
 
 function bz_sin_tablas(): array
@@ -554,14 +554,19 @@ function bz_sin_tablas(): array
     return ['ok' => false, 'error' => 'Las tablas FE_BUZON_* no existen en esta BD (¿restauración nueva?). Use "Aplicar migraciones" (aviso arriba) o: sudo -u www-data php8.5 panel-hacienda/db/migrar.php --aplicar'];
 }
 
+function bz_cuenta_api(): string { $c = (string)($_POST['cuenta'] ?? $_GET['cuenta'] ?? 'facturaelectronica'); if (!isset(BZ_CUENTAS[$c])) throw new RuntimeException('Cuenta de buzon no valida'); return $c; }
 function api_buzon_estado(): array
 {
-    $e = is_readable(BZ_ESTADO) ? (json_decode((string)file_get_contents(BZ_ESTADO), true) ?: []) : [];
-    $log = is_readable(BZ_LOG) ? array_slice(file(BZ_LOG, FILE_IGNORE_NEW_LINES) ?: [], -30) : [];
+    $cuenta = bz_cuenta_api();
+    $estadoPath = '/var/lib/lospaticas/panel/buzon' . ($cuenta === 'info' ? '-info' : '') . '-estado.json';
+    $logPath = '/var/lib/lospaticas/panel/buzon' . ($cuenta === 'info' ? '-info' : '') . '-sync.log';
+    $unit = $cuenta === 'info' ? 'paticas-buzon-fe-info' : 'paticas-buzon-fe';
+    $e = is_readable($estadoPath) ? (json_decode((string)file_get_contents($estadoPath), true) ?: []) : [];
+    $log = is_readable($logPath) ? array_slice(file($logPath, FILE_IGNORE_NEW_LINES) ?: [], -30) : [];
     $enCurso = false;
-    if ($fh = @fopen('/run/lock/paticas-buzon-fe.lock', 'r')) { $enCurso = !flock($fh, LOCK_SH | LOCK_NB); if (!$enCurso) flock($fh, LOCK_UN); fclose($fh); }
-    $t = ph_systemctl_show('paticas-buzon-fe.timer', ['ActiveState', 'UnitFileState', 'NextElapseUSecRealtime', 'LastTriggerUSec']);
-    return ['ok' => true, 'estado' => $e + ['estado' => 'nunca'], 'en_curso' => $enCurso, 'timer' => $t, 'tablas' => bz_tablas_ok(), 'log' => array_map('ph_mask', array_reverse($log))];
+    if ($fh = @fopen('/run/lock/' . $unit . '.lock', 'r')) { $enCurso = !flock($fh, LOCK_SH | LOCK_NB); if (!$enCurso) flock($fh, LOCK_UN); fclose($fh); }
+    $t = ph_systemctl_show($unit . '.timer', ['ActiveState', 'UnitFileState', 'NextElapseUSecRealtime', 'LastTriggerUSec']);
+    return ['ok' => true, 'cuenta' => $cuenta, 'usuario' => BZ_CUENTAS[$cuenta], 'estado' => $e + ['estado' => 'nunca'], 'en_curso' => $enCurso, 'timer' => $t, 'tablas' => bz_tablas_ok(), 'log' => array_map('ph_mask', array_reverse($log))];
 }
 
 function api_buzon_sync(): array
@@ -570,9 +575,11 @@ function api_buzon_sync(): array
         ph_accion_log('buzon: sincronizacion manual rechazada (faltan tablas FE_BUZON_*)');
         return ['ok' => false, 'error' => 'Faltan las tablas FE_BUZON_* en la BD. Aplique primero las migraciones pendientes (aviso arriba).'] + api_buzon_estado();
     }
+    $cuenta = bz_cuenta_api();
+    $unit = $cuenta === 'info' ? 'paticas-buzon-fe-info' : 'paticas-buzon-fe';
     $out = []; $rc = 0;
-    exec('/usr/bin/sudo -n /usr/bin/systemctl start --no-block paticas-buzon-fe.service 2>&1', $out, $rc);
-    ph_accion("buzon: sincronizacion manual solicitada (rc=$rc)");
+    exec('/usr/bin/sudo -n /usr/bin/systemctl start --no-block ' . $unit . '.service 2>&1', $out, $rc);
+    ph_accion("buzon: sincronizacion manual solicitada cuenta=$cuenta (rc=$rc)");
     usleep(800000);
     return ['ok' => $rc === 0, 'mensaje' => $rc === 0 ? 'Sincronización iniciada' : 'No se pudo iniciar: ' . implode(' ', $out)] + api_buzon_estado();
 }
@@ -590,12 +597,14 @@ function bz_where(array &$p): string
     if (($d = ph_date($_GET['desde'] ?? null))) { $w[] = 'd.FECHA_EMISION >= ?'; $p[] = $d . ' 00:00:00'; }
     if (($h = ph_date($_GET['hasta'] ?? null))) { $w[] = 'd.FECHA_EMISION < DATEADD(day, 1, CAST(? AS date))'; $p[] = $h; }
     if (($_GET['para'] ?? '') === '1') $w[] = 'd.PARA_LOS_PATICAS = 1';
+    $cuenta = (string)($_GET['cuenta'] ?? '');
+    if (isset(BZ_CUENTAS[$cuenta])) { $w[] = 'EXISTS (SELECT 1 FROM dbo.FE_BUZON_DOC_CUENTAS bc WHERE bc.CLAVE = d.CLAVE AND bc.CUENTA = ?)'; $p[] = BZ_CUENTAS[$cuenta]; }
     return implode(' AND ', $w);
 }
 
 function bz_fila(array $r): array
 {
-    return ['id' => (int)$r['ID'], 'clave' => $r['CLAVE'], 'tipo' => $r['TIPO_DOC'], 'consecutivo' => $r['CONSECUTIVO'], 'fecha' => $r['FECHA_EMISION'],
+    return ['buzones' => $r['BUZONES'] ?? '', 'id' => (int)$r['ID'], 'clave' => $r['CLAVE'], 'tipo' => $r['TIPO_DOC'], 'consecutivo' => $r['CONSECUTIVO'], 'fecha' => $r['FECHA_EMISION'],
         'emisor' => ph_utf8($r['NOMBRE']), 'nit_emisor' => $r['NIT_EMISOR'], 'receptor' => ph_utf8($r['NOMBRE_RECEPTOR']), 'nit_receptor' => $r['NIT_RECEPTOR'],
         'para' => (bool)$r['PARA_LOS_PATICAS'], 'moneda' => $r['MONEDA'], 'total' => $r['TOTALCOMPROBANTE'] === null ? null : (float)$r['TOTALCOMPROBANTE'],
         'impuesto' => $r['TOTALIMPUESTO'] === null ? null : (float)$r['TOTALIMPUESTO'], 'estado' => $r['ESTADO_HACIENDA'] ?: 'sin_respuesta',
@@ -603,7 +612,7 @@ function bz_fila(array $r): array
 }
 
 function bz_cols(): string { return 'd.ID, d.CLAVE, d.TIPO_DOC, d.CONSECUTIVO, CONVERT(varchar(19), d.FECHA_EMISION, 120) FECHA_EMISION, d.NOMBRE, d.NIT_EMISOR, d.NOMBRE_RECEPTOR, d.NIT_RECEPTOR,
-    d.PARA_LOS_PATICAS, d.MONEDA, d.TOTALCOMPROBANTE, d.TOTALIMPUESTO, d.ESTADO_HACIENDA, d.TIENE_XML, d.TIENE_RESPUESTA, d.TIENE_PDF'; }
+    d.PARA_LOS_PATICAS, d.MONEDA, d.TOTALCOMPROBANTE, d.TOTALIMPUESTO, d.ESTADO_HACIENDA, d.TIENE_XML, d.TIENE_RESPUESTA, d.TIENE_PDF, (SELECT STRING_AGG(bc.CUENTA, \', \') FROM dbo.FE_BUZON_DOC_CUENTAS bc WHERE bc.CLAVE = d.CLAVE) BUZONES'; }
 
 function api_buzon_docs(): array
 {
@@ -667,6 +676,8 @@ function api_buzon_doc(): array
         if ($abs && $r['CLASE'] === 'respuesta' && $resp === null) $resp = xml_pretty((string)file_get_contents($abs, false, null, 0, 2 * 1048576));
         if ($abs && $r['CLASE'] === 'pdf' && $pdf === null) $pdf = (int)$r['ID'];
     }
+        $pc = ph_db()->prepare('SELECT CUENTA FROM dbo.FE_BUZON_DOC_CUENTAS WHERE CLAVE = ? ORDER BY CUENTA'); $pc->execute([$d['CLAVE']]);
+    $d['BUZONES'] = $pc->fetchAll(PDO::FETCH_COLUMN);
     return ['ok' => true, 'doc' => $d, 'archivos' => $arch, 'correos' => array_values($correos), 'xml' => $xml, 'xml_respuesta' => $resp, 'pdf_id' => $pdf];
 }
 
@@ -674,6 +685,8 @@ function api_buzon_correos(): array
 {
     if (!bz_tablas_ok()) return bz_sin_tablas();
     $p = []; $w = ['1 = 1'];
+    $cuenta = (string)($_GET['cuenta'] ?? '');
+    if (isset(BZ_CUENTAS[$cuenta])) { $w[] = 'CUENTA = ?'; $p[] = BZ_CUENTAS[$cuenta]; }
     $est = (string)($_GET['estado'] ?? '');
     if (in_array($est, ['ok', 'sin_documentos', 'propio', 'duplicado', 'muy_grande', 'error'], true)) { $w[] = 'ESTADO = ?'; $p[] = $est; }
     $q = trim((string)($_GET['q'] ?? ''));
@@ -681,10 +694,10 @@ function api_buzon_correos(): array
     $w = implode(' AND ', $w);
     $size = min(100, max(10, (int)($_GET['size'] ?? 25))); $page = max(1, (int)($_GET['page'] ?? 1)); $off = ($page - 1) * $size;
     $st = ph_db()->prepare("SELECT COUNT(*) FROM dbo.FE_BUZON_CORREOS WHERE $w"); $st->execute($p); $total = (int)$st->fetchColumn();
-    $st = ph_db()->prepare("SELECT ID, CARPETA, REMITENTE, ASUNTO, CONVERT(varchar(19), FECHA_RECIBIDO, 120) RECIBIDO, TAMANO, ADJUNTOS, DOCUMENTOS, ESTADO, ERROR
+    $st = ph_db()->prepare("SELECT ID, CUENTA, CARPETA, REMITENTE, ASUNTO, CONVERT(varchar(19), FECHA_RECIBIDO, 120) RECIBIDO, TAMANO, ADJUNTOS, DOCUMENTOS, ESTADO, ERROR
         FROM dbo.FE_BUZON_CORREOS WHERE $w ORDER BY FECHA_RECIBIDO DESC, ID DESC OFFSET $off ROWS FETCH NEXT $size ROWS ONLY");
     $st->execute($p);
-    $rows = array_map(fn($r) => ['id' => (int)$r['ID'], 'carpeta' => ph_utf8($r['CARPETA']), 'remitente' => ph_utf8($r['REMITENTE']), 'asunto' => ph_utf8($r['ASUNTO']),
+    $rows = array_map(fn($r) => ['cuenta' => $r['CUENTA'], 'id' => (int)$r['ID'], 'carpeta' => ph_utf8($r['CARPETA']), 'remitente' => ph_utf8($r['REMITENTE']), 'asunto' => ph_utf8($r['ASUNTO']),
         'recibido' => $r['RECIBIDO'], 'tamano' => (int)$r['TAMANO'], 'adjuntos' => (int)$r['ADJUNTOS'], 'documentos' => (int)$r['DOCUMENTOS'], 'estado' => $r['ESTADO'],
         'error' => ph_mask(ph_utf8($r['ERROR']))], $st->fetchAll(PDO::FETCH_ASSOC));
     return ['ok' => true, 'total' => $total, 'page' => $page, 'size' => $size, 'rows' => $rows];
