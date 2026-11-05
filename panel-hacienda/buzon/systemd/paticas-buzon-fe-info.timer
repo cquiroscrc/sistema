@@ -1,0 +1,8 @@
+[Unit]
+Description=Los Paticas Buzon FE paticas-buzon-fe-info cada 5 minutos (escalonado)
+[Timer]
+OnCalendar=*-*-* *:02/5:30
+AccuracySec=5s
+Persistent=false
+[Install]
+WantedBy=timers.target

@@ -105,3 +105,25 @@ Tras la restauración final de la BD en el corte hay que aplicarlo de nuevo.
 2. Rutas: pestaña "Rutas y DEData" → Aplicar rutas.
 3. Buzón FE: `sudo rm -f /var/lib/lospaticas/panel/buzon-estado.json && sudo systemctl start paticas-buzon-fe.service`
    (vuelve a escanear todo el INBOX; los archivos ya guardados se reutilizan por SHA-256; ~13 corridas de 5 min, unos 65 min, o una manual con `--max=5000`).
+
+## Resumen: actualización automática
+- Un único GET `a=resumen` devuelve indicadores, gráfico y últimos rechazos de forma coherente.
+- Cada 60 segundos al terminar la lectura anterior; no se superponen las solicitudes del Resumen.
+- Pausa con pestaña oculta y refresca al regresar. En error conserva datos y hora de la última lectura correcta.
+- Interruptor "Actualizar cada 60 s": activado por defecto; preferencia `ph-resumen-auto` en localStorage.
+- Hora de última actualización en `America/Costa_Rica`. Ninguna acción de envío en el polling; 401 usa el login normal.
+
+## Buzón FE: dos cuentas
+- Cuentas con nombre: `facturaelectronica` e `info` (direcciones @lospaticas.com). Mismo servidor IMAPS y certificado verificado.
+- Secretos separados (root:root 600, nunca git): `/etc/lospaticas/buzon-fe.env` y `/etc/lospaticas/buzon-fe-info.env`.
+  `BUZON_CUENTA=info` selecciona estado/bitácora propios `buzon-info-estado.json` / `buzon-info-sync.log`.
+- `paticas-buzon-fe.timer`: minutos 00/05/...; `paticas-buzon-fe-info.timer`: 02:30/07:30/... (cada 5 minutos).
+- Cada servicio usa su propio lock; además ambos usan `paticas-buzon-ingest.lock` para no escribir una clave/archivo a la vez.
+- UID/UIDVALIDITY/carpeta y Message-ID se deduplican **por cuenta**. Los documentos siguen siendo únicos por clave global.
+- Migración `0003_buzon_multicuenta.sql`: `FE_BUZON_DOC_CUENTAS` (clave, cuenta, primer correo de esa cuenta), rellenada
+  desde los correos/archivos existentes. Conserva procedencia aunque dos buzones reciban exactamente el mismo adjunto.
+- Panel: dos estados/botones, columna y filtro Buzón en documentos y correos, procedencia en el detalle.
+- Ejemplos sin secretos y unidades en `buzon/info.env.example` y `buzon/systemd/`.
+- Backfill info: unidad transitoria `paticas-buzon-info-backfill`, ejecuta `/usr/local/sbin/paticas-buzon-info-backfill`
+  con EnvironmentFile, en lotes de 200, sin depender de SSH. Si hay error de login, se detiene y no insiste.
+- La lectura sigue siendo EXAMINE/BODY.PEEK; nunca marca/mueve/borra/envía. Solo INBOX; Sent/Trash/Junk quedan excluidos.

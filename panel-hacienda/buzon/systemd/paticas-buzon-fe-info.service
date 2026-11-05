@@ -1,0 +1,17 @@
+[Unit]
+Description=Los Paticas Buzon FE info (solo lectura IMAP)
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+UMask=0077
+Environment=BUZON_CUENTA=info
+EnvironmentFile=/etc/lospaticas/buzon-fe-info.env
+ExecStart=/usr/bin/flock -n /run/lock/paticas-buzon-fe-info.lock /usr/bin/flock -w 180 /run/lock/paticas-buzon-ingest.lock /usr/bin/php8.5 -d memory_limit=512M /var/www/lospaticas/sistema/panel-hacienda/buzon/buzon-sync.php
+TimeoutStartSec=50min
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
