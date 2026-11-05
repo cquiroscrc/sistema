@@ -14,6 +14,7 @@ try {
     }
     ph_require_login();
     switch ($a) {
+        case 'resumen': ph_json(api_resumen());
         case 'grafico':  ph_json(api_grafico());
         case 'status':   ph_json(api_status() + ['migraciones' => api_mig_resumen()]);
         case 'migraciones':         ph_json(api_migraciones());
@@ -729,4 +730,14 @@ function api_migraciones_aplicar(): array
     if ($err) { ph_accion('migraciones: ERROR ' . $err . ($hechas ? ' (aplicadas antes del error: ' . implode(', ', $hechas) . ')' : ''), 'Error'); return ['ok' => false, 'error' => $err, 'resumen' => api_mig_resumen(true)]; }
     ph_accion('migraciones: ' . ($hechas ? 'aplicadas ' . implode(', ', $hechas) : 'nada pendiente') . " en {$i['host']}/{$i['database']}");
     return ['ok' => true, 'mensaje' => $hechas ? 'Migraciones aplicadas: ' . implode(', ', $hechas) : 'No había migraciones pendientes', 'aplicadas' => $hechas, 'resumen' => api_mig_resumen(true)];
+}
+
+/** Resumen atomico de lecturas para el polling del Dashboard: ninguna accion de envio. */
+function api_resumen(): array
+{
+    $s = api_status() + ['migraciones' => api_mig_resumen()];
+    $g = api_grafico();
+    $_GET['estado'] = 'rechazado'; $_GET['size'] = '6'; $_GET['page'] = '1';
+    $d = api_docs();
+    return ['ok' => true, 'status' => $s, 'serie' => $g['rows'] ?? [], 'recientes' => array_slice($d['rows'] ?? [], 0, 6)];
 }

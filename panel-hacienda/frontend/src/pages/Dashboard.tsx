@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Send, XOctagon, Hourglass, Power, CheckCircle2, Clock, ArrowRight } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, type DocRow, type Status } from '../lib/api';
 import { cn, fmtMonto, fmtNum } from '../lib/utils';
-import { Card, CardBody, CardHeader, CardTitle, EstadoBadge, Empty, Spinner, Tabs } from '../components/ui';
+import { Card, CardBody, CardHeader, CardTitle, EstadoBadge, Empty, Spinner, Tabs, Switch } from '../components/ui';
 import type { Vista } from '../App';
 
 function Kpi({ titulo, valor, sub, icon: Icon, tono }: { titulo: string; valor: React.ReactNode; sub?: React.ReactNode; icon: any; tono: 'primary' | 'danger' | 'warning' | 'success' | 'muted' }) {
@@ -13,15 +13,55 @@ function Kpi({ titulo, valor, sub, icon: Icon, tono }: { titulo: string; valor: 
     <div className={cn('rounded-lg p-2.5', t)}><Icon className="h-5 w-5" /></div></div></Card>;
 }
 
-export default function Dashboard({ status, ir }: { status: Status | null; ir: (v: Vista) => void }) {
+export default function Dashboard({ status, ir, onStatus }: { status: Status | null; ir: (v: Vista) => void; onStatus: (s: Status) => void }) {
   const [dias, setDias] = useState<'14' | '30' | '90'>('30');
   const [serie, setSerie] = useState<any[] | null>(null);
   const [recientes, setRecientes] = useState<DocRow[] | null>(null);
-  useEffect(() => { setSerie(null); api('grafico', { dias }).then(j => setSerie(j.ok ? (j.rows ?? []) : [])); }, [dias]);
-  useEffect(() => { api('docs', { estado: 'rechazado', size: 6 }).then(j => setRecientes(j.ok ? (j.rows ?? []).slice(0, 6) : [])); }, []);
+  const [auto, setAuto] = useState(() => { try { return localStorage.getItem('ph-resumen-auto') !== 'off'; } catch { return true; } });
+  const [actualizado, setActualizado] = useState<Date | null>(null);
+  const [fallo, setFallo] = useState(false);
+  const control = useRef<{ run: () => void } | null>(null);
+  const valores = useRef({ dias, auto, onStatus }); valores.current = { dias, auto, onStatus };
+  useEffect(() => {
+    let vivo = true, ocupado = false, pendiente = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const run = async () => {
+      if (!vivo || document.hidden) return;
+      clearTimeout(timer);
+      if (ocupado) { pendiente = true; return; }
+      ocupado = true; const periodo = valores.current.dias;
+      try {
+        const j = await api('resumen', { dias: periodo });
+        if (vivo && periodo === valores.current.dias) {
+          if (!j.ok) throw new Error('refresh');
+          valores.current.onStatus(j.status); setSerie(j.serie ?? []); setRecientes(j.recientes ?? []);
+          setActualizado(new Date()); setFallo(false);
+        }
+      } catch { if (vivo) setFallo(true); /* conservar los datos anteriores; api mantiene el manejo de 401 */ }
+      finally {
+        ocupado = false;
+        if (vivo && !document.hidden) {
+          if (pendiente) { pendiente = false; void run(); }
+          else if (valores.current.auto) timer = setTimeout(() => { if (valores.current.auto) void run(); }, 60000);
+        }
+      }
+    };
+    const visible = () => { clearTimeout(timer); if (!document.hidden && valores.current.auto) void run(); };
+    control.current = { run: () => { clearTimeout(timer); void run(); } };
+    document.addEventListener('visibilitychange', visible); void run();
+    return () => { vivo = false; clearTimeout(timer); control.current = null; document.removeEventListener('visibilitychange', visible); };
+  }, []);
+  const diasPrevios = useRef(dias);
+  useEffect(() => { if (diasPrevios.current !== dias) { diasPrevios.current = dias; control.current?.run(); } }, [dias]);
+  useEffect(() => { try { localStorage.setItem('ph-resumen-auto', auto ? 'on' : 'off'); } catch {} }, [auto]);
   const c = status?.conteos;
   const activo = !!status?.servicio_activo;
   return <div className="space-y-6">
+    <div className="flex flex-wrap items-center justify-end gap-4 text-xs text-muted-foreground" data-testid="resumen-refresh">
+      <span>Última actualización: {actualizado ? new Intl.DateTimeFormat('es-CR', { timeZone: 'America/Costa_Rica', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(actualizado) : '—'} · Costa Rica</span>
+      {fallo && <span className="text-warning">No se pudo actualizar; se conservan los datos.</span>}
+      <Switch checked={auto} onChange={v => { valores.current.auto = v; setAuto(v); if (v) control.current?.run(); }} label="Actualizar cada 60 s" />
+    </div>
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Kpi titulo="Enviados hoy" valor={fmtNum(c?.enviados_hoy)} sub={c && <><span className="text-success">{fmtNum(c.aceptado_hoy)} aceptados</span> · <span className="text-danger">{fmtNum(c.rechazado_hoy)} rechazados</span></>} icon={Send} tono="primary" />
       <Kpi titulo="Con error" valor={fmtNum(c?.error)} sub={c?.reintentar ? `${c.reintentar} marcados para reintento` : 'Errores locales / servidor'} icon={XOctagon} tono={c?.error ? 'danger' : 'success'} />

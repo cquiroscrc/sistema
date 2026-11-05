@@ -41,7 +41,7 @@ export default function App() {
   }, [toast]);
 
   const cargarStatus = useCallback(async () => { try { const s = await api<Status>('status'); if (s.ok) setStatus(s); } catch { /* 401 manejado */ } }, []);
-  useEffect(() => { if (!usuario) return; cargarStatus(); const t = setInterval(() => !document.hidden && cargarStatus(), 15000); return () => clearInterval(t); }, [usuario, cargarStatus]);
+  useEffect(() => { if (!usuario || vista === 'inicio') return; cargarStatus(); const t = setInterval(() => !document.hidden && cargarStatus(), 15000); return () => clearInterval(t); }, [usuario, cargarStatus, vista]);
 
   const tema = () => { const d = !oscuro; setOscuro(d); document.documentElement.classList.toggle('dark', d); localStorage.setItem('ph-tema', d ? 'oscuro' : 'claro'); };
   const salir = async () => { await api('logout', {}, {}).catch(() => {}); setUsuario(null); const s = await api('sesion'); setCsrf(s.csrf || ''); };
@@ -83,7 +83,7 @@ export default function App() {
       <main className="min-w-0 flex-1 p-4 lg:p-8">
         <MigracionesAviso m={status?.migraciones} bd={status?.bd?.database} onCambio={cargarStatus} />
         <ErrorBoundary key={vista} nombre={NAV.find(n => n.id === vista)?.label ?? vista}>
-          {vista === 'inicio' && <Dashboard status={status} ir={ir} />}
+          {vista === 'inicio' && <Dashboard status={status} ir={ir} onStatus={setStatus} />}
           {vista === 'registro' && <Registro />}
           {vista === 'comprobantes' && <Comprobantes status={status} onCambio={cargarStatus} />}
           {vista === 'cola' && <Cola />}
