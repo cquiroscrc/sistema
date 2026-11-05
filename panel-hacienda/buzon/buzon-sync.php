@@ -221,7 +221,7 @@ try {
         exit(0);
     }
     $t0 = microtime(true);
-    bz_estado(['estado' => 'en curso', 'mensaje' => 'Conectando…', 'inicio' => date('Y-m-d H:i:s'), 'fin' => null, 'config' => $pub]);
+    if (!isset($opt['listar'])) bz_estado(['estado' => 'en curso', 'mensaje' => 'Conectando…', 'inicio' => date('Y-m-d H:i:s'), 'fin' => null, 'config' => $pub]);
     $im = new BzImap($cfg['host'], $cfg['port'], $cfg['verificar']);
     $im->login($cfg['user'], $pass);
     unset($pass);
