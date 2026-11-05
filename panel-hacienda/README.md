@@ -69,21 +69,21 @@ Revertir (escribir REVERTIR), historial en `/var/lib/lospaticas/panel/acciones.l
 Tras la restauración final de la BD en el corte hay que aplicarlo de nuevo.
 
 ## Buzón FE (comprobantes recibidos por correo)
-- Cuenta: `facturaelectronica@lospaticas.com` en `mail.lospaticas.com:993` (IMAPS, certificado verificado).
-  Credenciales SOLO en `/etc/lospaticas/buzon-fe.env` (root 600; `IMAP_PASS` o `IMAP_PASS_B64`). Si la clave está vacía,
+- Cuentas: `facturaelectronica@lospaticas.com` y `info@lospaticas.com` en `mail.lospaticas.com:993` (IMAPS, certificado verificado).
+  Credenciales SOLO en `/etc/lospaticas/buzon-fe.env` y `/etc/lospaticas/buzon-fe-info.env` (root 600; `IMAP_PASS` o `IMAP_PASS_B64`).
+  `BUZON_CUENTA=facturaelectronica|info` (systemd Environment / EnvironmentFile). Si la clave está vacía,
   la corrida termina bien con estado **"sin credenciales"** (se ve en el panel).
 - **Solo lectura**: EXAMINE + `BODY.PEEK` (no marca leídos, no mueve, no borra; el cliente bloquea STORE/COPY/MOVE/EXPUNGE/APPEND/DELETE/SELECT).
   No se envía ningún correo ni se manda nada a Hacienda.
-- `paticas-buzon-fe.timer` cada 5 min → `paticas-buzon-fe.service` (www-data, `flock -n /run/lock/paticas-buzon-fe.lock`).
-  "Sincronizar ahora" del panel hace `sudo systemctl start --no-block paticas-buzon-fe.service` (sudoers).
-- Script: `panel-hacienda/buzon/buzon-sync.php` (`--listar` carpetas, `--schema` = migraciones, `--eml=archivo` analizar sin escribir,
-  `--importar-eml=archivo` prueba, `--max=N`). Bitácora `/var/lib/lospaticas/panel/buzon-sync.log`, estado `buzon-estado.json`.
-- Archivos en `/var/lib/lospaticas/fe/buzon/<aaaa>/<mm>/<clave>/` (`<clave>.xml`, `_respuesta.xml`, `.pdf`); PDFs sin clave en `sin-clave/`.
-  No se publican por nginx: solo se sirven por `api.php?accion=buzon_archivo` (sesión + ruta validada con realpath).
-- Deduplicación: (cuenta, carpeta, UIDVALIDITY, UID) + Message-ID; documentos por CLAVE (upsert). Los XML/ZIP se analizan
-  con DOCTYPE rechazado y sin red; ZIP limitado (200 entradas, 30 MB c/u, 100 MB total).
+- Timers escalonados cada 5 min: `paticas-buzon-fe.timer` (facturaelectronica) y `paticas-buzon-fe-info.timer` (info, OnBootSec=5min30s).
+  Cada uno con flock propio + flock compartido de ingestión. "Sincronizar ahora" del panel arranca el service de la cuenta (sudoers).
+- Script: `panel-hacienda/buzon/buzon-sync.php` (`--listar`, `--schema`, `--eml=`, `--importar-eml=`, `--max=N`).
+  Estado/log por cuenta: `buzon-estado.json` / `buzon-sync.log` y `buzon-info-estado.json` / `buzon-info-sync.log`.
+- Archivos en `/var/lib/lospaticas/fe/buzon/<aaaa>/<mm>/<clave>/` (compartidos; documentos por CLAVE global).
+- Deduplicación: (cuenta, carpeta, UIDVALIDITY, UID) + Message-ID **por cuenta**; documentos por CLAVE (upsert) y
+  procedencia multi-buzón en `FE_BUZON_DOC_CUENTAS` (migración 0003).
 - Se omiten por defecto los comprobantes emitidos por Los Paticas (`BUZON_IGNORAR_EMISORES=3101090358,310109035837`).
-- Tablas `FE_BUZON_CORREOS`, `FE_BUZON_DOCUMENTOS`, `FE_BUZON_ARCHIVOS`: se crean con las migraciones (ver abajo).
+- Tablas `FE_BUZON_CORREOS`, `FE_BUZON_DOCUMENTOS`, `FE_BUZON_ARCHIVOS`, `FE_BUZON_DOC_CUENTAS`.
   Si faltan, la sincronización no falla: termina con estado **"sin tablas"** y el panel lo indica.
 - Pendiente / siguiente paso posible: enviar el MensajeReceptor (aceptación/rechazo) a Hacienda. **No implementado.**
 
@@ -91,6 +91,7 @@ Tras la restauración final de la BD en el corte hay que aplicarlo de nuevo.
 - `panel-hacienda/db/migrations/NNNN_nombre.sql`, en orden e **idempotentes** (`IF OBJECT_ID(...) IS NULL`, `IF NOT EXISTS`; nunca DROP de datos):
   - `0001_panel_migraciones.sql` — `dbo.PANEL_MIGRACIONES` (control: nombre, SHA-256, fecha, duración, usuario, host).
   - `0002_fe_buzon_tablas.sql` — `FE_BUZON_CORREOS`, `FE_BUZON_DOCUMENTOS`, `FE_BUZON_ARCHIVOS` con PK/UNIQUE/DEFAULT e índices.
+  - `0003_buzon_multicuenta.sql` — `FE_BUZON_DOC_CUENTAS` (procedencia por buzón; filas previas = facturaelectronica).
   - El panel no crea otros objetos en la BD (bloqueo de login, sesiones y bitácora del panel están en `/var/lib/lospaticas/panel`;
     la auditoría usa la tabla existente `dbo.BITACORA`). La corrección de rutas **no** es una migración: es la acción "Rutas" del panel.
 - Runner: `sudo -u www-data php8.5 /var/www/lospaticas/sistema/panel-hacienda/db/migrar.php --estado | --aplicar`
