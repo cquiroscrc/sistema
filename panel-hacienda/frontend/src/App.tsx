@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { LayoutDashboard, ScrollText, FileText, Hourglass, Power, FolderSync, Moon, Sun, LogOut, Menu, Receipt, Inbox } from 'lucide-react';
+import { LayoutDashboard, ScrollText, FileText, Hourglass, Power, CalendarClock, FolderSync, Moon, Sun, LogOut, Menu, Receipt, Inbox } from 'lucide-react';
 import { api, setCsrf, setOnUnauthorized, type Status } from './lib/api';
 import { cn } from './lib/utils';
 import { Spinner, useToast } from './components/ui';
@@ -10,17 +10,19 @@ import Registro from './pages/Registro';
 import Comprobantes from './pages/Comprobantes';
 import Cola from './pages/Cola';
 import Servicio from './pages/Servicio';
+import Tareas from './pages/Tareas';
 import RutasDEData from './pages/RutasDEData';
 import BuzonFE from './pages/BuzonFE';
 import MigracionesAviso from './components/MigracionesAviso';
 
-export type Vista = 'inicio' | 'registro' | 'comprobantes' | 'cola' | 'servicio' | 'rutas' | 'buzon';
+export type Vista = 'inicio' | 'registro' | 'comprobantes' | 'cola' | 'servicio' | 'tareas' | 'rutas' | 'buzon';
 const NAV: { id: Vista; label: string; icon: any }[] = [
   { id: 'inicio', label: 'Resumen', icon: LayoutDashboard },
   { id: 'comprobantes', label: 'Comprobantes', icon: FileText },
   { id: 'registro', label: 'Registro en vivo', icon: ScrollText },
   { id: 'cola', label: 'Cola de envío', icon: Hourglass },
   { id: 'servicio', label: 'Servicio de envío', icon: Power },
+  { id: 'tareas', label: 'Tareas programadas', icon: CalendarClock },
   { id: 'buzon', label: 'Buzón FE', icon: Inbox },
   { id: 'rutas', label: 'Rutas y DEData', icon: FolderSync },
 ];
@@ -88,6 +90,7 @@ export default function App() {
           {vista === 'comprobantes' && <Comprobantes status={status} onCambio={cargarStatus} />}
           {vista === 'cola' && <Cola />}
           {vista === 'servicio' && <Servicio status={status} onCambio={cargarStatus} />}
+          {vista === 'tareas' && <Tareas onCambio={cargarStatus} />}
           {vista === 'rutas' && <RutasDEData />}
           {vista === 'buzon' && <BuzonFE />}
         </ErrorBoundary>

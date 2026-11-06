@@ -1,0 +1,5 @@
+#!/bin/bash
+# Comando forzado SSH: entrega la accion (status|enable|disable) a paticas-backup-ctl.
+# sudo no conserva SSH_ORIGINAL_COMMAND por defecto, por eso se pasa como argumento.
+set -euo pipefail
+exec /usr/bin/sudo -n /usr/local/sbin/paticas-backup-ctl "${SSH_ORIGINAL_COMMAND:-}"

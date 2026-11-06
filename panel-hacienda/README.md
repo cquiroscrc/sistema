@@ -128,3 +128,12 @@ Tras la restauración final de la BD en el corte hay que aplicarlo de nuevo.
 - Backfill info: unidad transitoria `paticas-buzon-info-backfill`, ejecuta `/usr/local/sbin/paticas-buzon-info-backfill`
   con EnvironmentFile, en lotes de 200, sin depender de SSH. Si hay error de login, se detiene y no insiste.
 - La lectura sigue siendo EXAMINE/BODY.PEEK; nunca marca/mueve/borra/envía. Solo INBOX; Sent/Trash/Junk quedan excluidos.
+
+## Tareas programadas
+Pestaña del panel (`#/tareas`) para ver y habilitar/deshabilitar cuatro timers:
+`caja_correo` 17:15, `mensajeria_update` 17:28, `prefacturas_update` 17:48 (en este servidor)
+y `backup_inventario` 18:00 (en pat-sql-web01 / 172.16.12.100, controlado por SSH con comando forzado).
+Activar/Desactivar exige escribir ACTIVAR o DESACTIVAR, usa CSRF y deja rastro en `acciones.log` y `BITACORA`.
+No hay botón de ejecutar ahora. Las unidades se instalan deshabilitadas hasta el corte (ver `/etc/lospaticas/CORTE-HACIENDA.md`).
+Unidades y el wrapper `paticas-tareas-ctl` están en `tareas/systemd/`.
+

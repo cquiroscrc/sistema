@@ -1,0 +1,16 @@
+[Unit]
+Description=Los Paticas - cierre de caja por correo (utilitarios/caja_correo.php)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+UMask=0027
+StandardOutput=append:/var/log/lospaticas/caja-correo.log
+StandardError=append:/var/log/lospaticas/caja-correo.log
+ExecStart=/usr/bin/curl -sS -L --max-redirs 3 --max-time 180 http://127.0.0.1/utilitarios/caja_correo.php
+Nice=5
+NoNewPrivileges=yes
+PrivateTmp=yes

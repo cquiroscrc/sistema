@@ -4,6 +4,7 @@ require __DIR__ . '/lib.php';
 
 require_once __DIR__ . '/buzon/buzon-lib.php';
 require_once __DIR__ . '/db/migrar-lib.php';
+require_once __DIR__ . '/tareas/tareas-lib.php';
 $a = $_GET['a'] ?? '';
 try {
     // Sin sesion solo se permite: sesion (token CSRF y estado), login y logout.
@@ -39,6 +40,8 @@ try {
         case 'buzon_correos': ph_json(api_buzon_correos());
         case 'buzon_archivo': api_buzon_archivo();
         case 'dedata_sync': ph_require_post(); ph_json(api_dedata_sync());
+        case 'tareas':   ph_json(api_tareas());
+        case 'tarea':    ph_require_post(); ph_json(api_tarea());
         default:         ph_json(['ok' => false, 'error' => 'Accion desconocida'], 400);
     }
 } catch (Throwable $e) {

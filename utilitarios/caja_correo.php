@@ -1,5 +1,8 @@
 <?php
+ob_start();
 session_start();
+$meta=0;
+$metamensual=0;
 date_default_timezone_set("America/Costa_Rica"); // pone la hora correctamente
 $error = 1;
     if((isset($_GET['error']))&&(!(empty($_GET['error'])))){

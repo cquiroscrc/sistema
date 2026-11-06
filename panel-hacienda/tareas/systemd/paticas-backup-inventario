@@ -1,0 +1,49 @@
+#!/bin/bash
+# Respaldo diario de la BD inventario (contenedor mssql2022). No imprime secretos.
+set -euo pipefail
+LOG=/var/log/paticas-backup-inventario.log
+DIR=/var/opt/mssql/backup
+PASSFILE=/root/mssql_sa_password.txt
+umask 027
+log() { echo "$(TZ=America/Costa_Rica date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$LOG"; }
+die() { log "ERROR $*"; exit 1; }
+
+[ -r "$PASSFILE" ] || die "no hay archivo de credenciales SA"
+[ -d "$DIR" ] || mkdir -p "$DIR"
+
+STAMP=$(TZ=America/Costa_Rica date '+%Y%m%d_%H%M')
+FILE="inventario_${STAMP}.bak"
+PATH_CTN="/var/opt/mssql/backup/${FILE}"
+T0=$(date +%s)
+log "inicio $FILE"
+df -h / | tail -1 | tee -a "$LOG"
+
+SQLCMDPASSWORD=$(tr -d '\r\n' < "$PASSFILE")
+export SQLCMDPASSWORD
+sql() {
+  /usr/bin/docker exec -e SQLCMDPASSWORD mssql2022 /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -l 30 "$@"
+}
+set +e
+sql -Q "BACKUP DATABASE [inventario] TO DISK = N'${PATH_CTN}' WITH COMPRESSION, CHECKSUM, INIT, STATS = 10;" >>"$LOG" 2>&1
+RC1=$?
+if [ $RC1 -ne 0 ]; then
+  unset SQLCMDPASSWORD
+  die "BACKUP fallo rc=$RC1"
+fi
+sql -Q "RESTORE VERIFYONLY FROM DISK = N'${PATH_CTN}' WITH CHECKSUM;" >>"$LOG" 2>&1
+RC2=$?
+unset SQLCMDPASSWORD
+set -e
+[ $RC2 -eq 0 ] || die "VERIFYONLY fallo rc=$RC2"
+
+T1=$(date +%s)
+if [ -f "$DIR/$FILE" ]; then
+  SIZE=$(stat -c '%s' "$DIR/$FILE")
+  log "ok archivo=$FILE bytes=$SIZE segundos=$((T1-T0)) VERIFYONLY=ok"
+else
+  die "no se creo $DIR/$FILE"
+fi
+
+# Retencion 14 dias: solo inventario_YYYYMMDD_HHMM.bak (nunca inventario.bak u otros)
+find "$DIR" -maxdepth 1 -type f -name 'inventario_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9].bak' -mtime +14 -print -delete >>"$LOG" 2>&1 || true
+log "fin"

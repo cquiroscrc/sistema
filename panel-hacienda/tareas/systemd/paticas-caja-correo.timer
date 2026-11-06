@@ -1,0 +1,10 @@
+[Unit]
+Description=Los Paticas - cierre de caja a las 17:15 Costa Rica
+
+[Timer]
+OnCalendar=*-*-* 17:15:00 America/Costa_Rica
+Persistent=false
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

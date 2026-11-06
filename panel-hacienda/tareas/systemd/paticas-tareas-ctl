@@ -1,0 +1,42 @@
+#!/bin/bash
+# Control estrecho de timers de tareas (3 locales en .106 + respaldo en .100).
+# Uso: paticas-tareas-ctl <caja_correo|mensajeria_update|prefacturas_update|backup_inventario> <enable|disable|status>
+set -euo pipefail
+ID="${1:-}"
+ACC="${2:-}"
+case "$ID" in
+  caja_correo|mensajeria_update|prefacturas_update|backup_inventario) ;;
+  *) echo "unidad invalida" >&2; exit 2 ;;
+esac
+case "$ACC" in
+  enable|disable|status) ;;
+  *) echo "accion invalida" >&2; exit 2 ;;
+esac
+
+if [ "$ID" = "backup_inventario" ]; then
+  exec /usr/bin/ssh -F /dev/null -i /etc/lospaticas/ssh/paticas-backup-inventario \
+    -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+    -o UserKnownHostsFile=/etc/lospaticas/ssh/known_hosts \
+    -o ConnectTimeout=10 \
+    administrator@172.16.12.100 "$ACC"
+fi
+
+declare -A UNIT=(
+  [caja_correo]=paticas-caja-correo
+  [mensajeria_update]=paticas-mensajeria-update
+  [prefacturas_update]=paticas-prefacturas-update
+)
+U="${UNIT[$ID]}"
+case "$ACC" in
+  enable)  exec /usr/bin/systemctl enable --now "${U}.timer" ;;
+  disable) exec /usr/bin/systemctl disable --now "${U}.timer" ;;
+  status)
+    /usr/bin/systemctl show "${U}.timer" --no-pager -p ActiveState -p UnitFileState -p NextElapseUSecRealtime -p LastTriggerUSec
+    echo '---SERVICE---'
+    /usr/bin/systemctl show "${U}.service" --no-pager -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp
+    echo '---LOG---'
+    LOG="/var/log/lospaticas/${U#paticas-}.log"
+    # map names: caja-correo, mensajeria-update, prefacturas-update
+    tail -n 40 "$LOG" 2>/dev/null || true
+    ;;
+esac

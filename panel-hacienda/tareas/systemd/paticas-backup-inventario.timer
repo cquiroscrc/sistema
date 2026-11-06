@@ -1,0 +1,10 @@
+[Unit]
+Description=Los Paticas - respaldo inventario a las 18:00 Costa Rica
+
+[Timer]
+OnCalendar=*-*-* 18:00:00 America/Costa_Rica
+Persistent=false
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

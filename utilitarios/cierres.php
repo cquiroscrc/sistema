@@ -5,6 +5,9 @@ date_default_timezone_set("America/Costa_Rica");
 
 if(isset($_REQUEST['datos']) && !empty($_REQUEST['datos'])){
     $datos = $_REQUEST['datos'];
+} else {
+    error_log('cierres.php: datos vacios o ausentes');
+    exit;
 }
 
 $conteo=0;

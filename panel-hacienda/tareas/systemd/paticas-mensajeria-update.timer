@@ -1,0 +1,10 @@
+[Unit]
+Description=Los Paticas - mensajeria_update a las 17:28 Costa Rica
+
+[Timer]
+OnCalendar=*-*-* 17:28:00 America/Costa_Rica
+Persistent=false
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

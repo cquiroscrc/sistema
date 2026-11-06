@@ -1,0 +1,11 @@
+[Unit]
+Description=Los Paticas - respaldo diario de la BD inventario
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/sbin/paticas-backup-inventario
+TimeoutStartSec=3h
+Nice=10
