@@ -24,8 +24,8 @@ const PH_MAX_SEG     = 43200;     // duracion maxima de una sesion (12 h)
 const PH_FALLOS_MAX  = 5;         // intentos fallidos antes de bloquear
 const PH_BLOQUEO_SEG = 900;       // bloqueo de 15 min por usuario y por IP
 // Perfiles (columna acceso de dbo.acc_usuarios, = $_SESSION['perfil'] del POS) que pueden entrar.
-// Vacio = cualquier usuario activo (estado = 1). Propuesta: ['total'] (perfil administrador del POS).
-const PH_PERFILES_PERMITIDOS = [];
+// Ambos se consideran administradores del panel. Comparacion sin mayusculas ni espacios.
+const PH_PERFILES_PERMITIDOS = ['total', 'parcial'];
 
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
@@ -56,6 +56,13 @@ if (!empty($_SESSION['usuario'])) {
         $_SESSION = ['csrf' => bin2hex(random_bytes(32))];
         session_regenerate_id(true);
         $GLOBALS['ph_expirada'] = $u;
+    } elseif (!ph_sesion_perfil_vigente()) {
+        $u = (string)$_SESSION['usuario'];
+        ph_accion_log("sesion cerrada (perfil no permitido) usuario=$u ip=" . ph_ip());
+        ph_bitacora("sesion cerrada por perfil no permitido: $u", 'Warning');
+        $_SESSION = ['csrf' => bin2hex(random_bytes(32))];
+        session_regenerate_id(true);
+        $GLOBALS['ph_perfil_denegado'] = $u;
     } else {
         $_SESSION['ultimo'] = $now;
     }
@@ -74,8 +81,45 @@ function ph_ip_clave(): string
 function ph_require_login(): void
 {
     if (ph_user() === '') {
-        ph_json(['ok' => false, 'error' => isset($GLOBALS['ph_expirada']) ? 'La sesion expiro por inactividad' : 'No autenticado', 'csrf' => $_SESSION['csrf']], 401);
+        $err = isset($GLOBALS['ph_perfil_denegado'])
+            ? 'Tu perfil no tiene acceso al panel'
+            : (isset($GLOBALS['ph_expirada']) ? 'La sesion expiro por inactividad' : 'No autenticado');
+        ph_json(['ok' => false, 'error' => $err, 'csrf' => $_SESSION['csrf']], 401);
     }
+}
+
+/** Normaliza acceso: minusculas y sin espacios. */
+function ph_perfil_normalizado(?string $acceso): string
+{
+    return preg_replace('/\s+/u', '', mb_strtolower(trim((string)$acceso), 'UTF-8')) ?? '';
+}
+
+function ph_perfil_permitido(?string $acceso): bool
+{
+    if (!PH_PERFILES_PERMITIDOS) return true;
+    $p = ph_perfil_normalizado($acceso);
+    if ($p === '') return false;
+    foreach (PH_PERFILES_PERMITIDOS as $perm) {
+        if ($p === ph_perfil_normalizado((string)$perm)) return true;
+    }
+    return false;
+}
+
+/** Perfil de la sesion (y, si se puede, el actual en BD) sigue permitido. */
+function ph_sesion_perfil_vigente(): bool
+{
+    if (!ph_perfil_permitido($_SESSION['perfil'] ?? '')) return false;
+    try {
+        $st = ph_db()->prepare('SELECT acceso, estado FROM dbo.acc_usuarios WHERE usuario = ?');
+        $st->execute([(string)$_SESSION['usuario']]);
+        $row = $st->fetch(\PDO::FETCH_ASSOC) ?: null;
+        $st->closeCursor();
+        if (!$row || (int)$row['estado'] !== 1 || !ph_perfil_permitido($row['acceso'] ?? null)) return false;
+        $_SESSION['perfil'] = trim((string)$row['acceso']);
+    } catch (Throwable $e) {
+        // Si la BD no responde, basta la comprobacion del perfil guardado en la sesion.
+    }
+    return true;
 }
 
 date_default_timezone_set('America/Costa_Rica');
@@ -267,6 +311,13 @@ function ph_login(string $usuario, string $password): array
         $st->execute([$usuario]);
         $r = $st->fetch(PDO::FETCH_ASSOC) ?: null;
         $st->closeCursor();
+        if ($r && !ph_perfil_permitido($r['acceso'] ?? null)) {
+            $acc = trim((string)$r['acceso']);
+            unset($r);
+            ph_accion_log("login RECHAZADO (perfil {$acc} no permitido) usuario=$usuario ip=" . ph_ip());
+            ph_bitacora("login rechazado por perfil: $usuario", 'Warning');
+            return ['ok' => false, 'error' => 'Tu perfil no tiene acceso al panel'];
+        }
         if ($r && hash_equals((string)$r['usuario'], $usuario) && hash_equals((string)$r['password'], $password)) {
             if ((int)$r['estado'] !== 1) $motivo = 'inactivo';
             else $ok = $r;
@@ -274,11 +325,6 @@ function ph_login(string $usuario, string $password): array
         unset($r);
     }
     unset($password);
-    if ($ok && PH_PERFILES_PERMITIDOS && !in_array(trim((string)$ok['acceso']), PH_PERFILES_PERMITIDOS, true)) {
-        ph_accion_log("login RECHAZADO (perfil {$ok['acceso']} no permitido) usuario=$usuario ip=" . ph_ip());
-        ph_bitacora("login rechazado por perfil: $usuario", 'Warning');
-        return ['ok' => false, 'error' => 'Su usuario no tiene acceso a este panel'];
-    }
     if (!$ok) {
         ph_fallos(function (array &$d) use ($kU, $kI) { foreach ([$kU, $kI] as $k) $d[$k] = ['n' => ($d[$k]['n'] ?? 0) + 1, 't' => time()]; });
         ph_accion_log("login FALLIDO ($motivo) usuario=$usuario ip=" . ph_ip());
