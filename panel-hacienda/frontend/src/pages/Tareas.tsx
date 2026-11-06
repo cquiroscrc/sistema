@@ -33,8 +33,9 @@ export default function Tareas({ onCambio }: { onCambio?: () => void }) {
     <Card className="border-warning/40">
       <CardHeader><CardTitle className="flex items-center gap-2"><ShieldAlert className="h-4 w-4 text-warning" />Corte desde 172.16.12.3</CardTitle></CardHeader>
       <CardBody className="space-y-2 text-sm text-muted-foreground">
-        <p>Estas tareas siguen corriendo en el servidor Windows. Activarlas aquí <b className="text-foreground">duplicaría correos</b> (cierre de caja) o escribiría sobre la copia de la BD en 172.16.12.100.</p>
-        <p>En el corte: deshabilite primero las tareas programadas de Windows y luego active cada timer desde esta pantalla (escribir ACTIVAR).</p>
+        <p>Cierre de caja, mensajería y prefacturas siguen corriendo en el servidor Windows. Activarlas aquí <b className="text-foreground">duplicaría el trabajo</b> (incluido el correo de cierre de caja).</p>
+        <p>El respaldo diario de la BD inventario (18:00, pat-sql-web01) está habilitado en este servidor. Puede desactivarlo o volver a activarlo desde esta pantalla.</p>
+        <p>En el corte de las otras tres: deshabilite primero las tareas programadas de Windows y luego actívelas aquí (escribir ACTIVAR).</p>
       </CardBody>
     </Card>
     <div className="grid gap-6 xl:grid-cols-2">

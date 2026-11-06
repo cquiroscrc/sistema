@@ -1,6 +1,6 @@
 # Tareas programadas
 
-Timers diarios del corte (America/Costa_Rica), instalados deshabilitados:
+Timers diarios (America/Costa_Rica). El respaldo de inventario se instala habilitado; las otras tres quedan deshabilitadas hasta el corte:
 
 | id | hora | unidad | servidor |
 |---|---|---|---|

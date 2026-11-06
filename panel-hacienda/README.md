@@ -134,6 +134,6 @@ Pestaña del panel (`#/tareas`) para ver y habilitar/deshabilitar cuatro timers:
 `caja_correo` 17:15, `mensajeria_update` 17:28, `prefacturas_update` 17:48 (en este servidor)
 y `backup_inventario` 18:00 (en pat-sql-web01 / 172.16.12.100, controlado por SSH con comando forzado).
 Activar/Desactivar exige escribir ACTIVAR o DESACTIVAR, usa CSRF y deja rastro en `acciones.log` y `BITACORA`.
-No hay botón de ejecutar ahora. Las unidades se instalan deshabilitadas hasta el corte (ver `/etc/lospaticas/CORTE-HACIENDA.md`).
+No hay botón de ejecutar ahora. Las tres tareas de utilitarios se instalan deshabilitadas hasta el corte; el respaldo de inventario queda habilitado a las 18:00 (ver `/etc/lospaticas/CORTE-HACIENDA.md`).
 Unidades y el wrapper `paticas-tareas-ctl` están en `tareas/systemd/`.
 
