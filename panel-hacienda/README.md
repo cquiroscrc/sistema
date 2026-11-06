@@ -20,8 +20,10 @@
   (`/POS/ingreso` → `ControladorUsuarios::ctrIngresoUsuario`): usuario solo `[a-zA-Z0-9]`, búsqueda `WHERE usuario = ?`
   (primera fila), usuario y contraseña comparados exactos (texto plano, sin recortar, distingue mayúsculas) y `estado = 1`.
   Para quitar el acceso a alguien: `estado = 0` o cambiar su contraseña en el POS.
-- Restricción por perfil opcional (columna `acceso`, = `$_SESSION['perfil']` del POS): `PH_PERFILES_PERMITIDOS` en `lib.php`
-  (vacío = todos los activos; propuesta `['total']`, el perfil administrador del POS).
+- Solo entran perfiles `total` y `parcial` (columna `acceso` = `$_SESSION['perfil']` del POS); ambos se consideran
+  administradores. `PH_PERFILES_PERMITIDOS` en `lib.php` (comparación sin mayúsculas ni espacios). Otro perfil recibe
+  «Tu perfil no tiene acceso al panel» sin indicar si la contraseña era correcta, y una sesión ya abierta se cierra
+  en la siguiente petición.
 - Sesión PHP `PANELHACIENDA`: cookie Secure + HttpOnly + SameSite=Strict (path `/panel-hacienda/`), `session_regenerate_id` al entrar,
   cierre por inactividad 30 min y máximo 12 h, CSRF en todo POST (login incluido).
   Las sesiones se guardan en `/var/lib/lospaticas/panel/sessions` (www-data 700), no en `/var/lib/php/sessions`, porque el cron
