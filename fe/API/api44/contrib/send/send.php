@@ -107,7 +107,6 @@ function send()
     $respuesta = curl_exec($curl);
     $status = curl_getinfo($curl, CURLINFO_HTTP_CODE);
     $err = curl_error($curl);
-    curl_close($curl);
     if ($err)
     {
         $arrayResp = array(
@@ -167,7 +166,6 @@ function sendMensaje()
     $respuesta = curl_exec($curl);
     $status = curl_getinfo($curl, CURLINFO_HTTP_CODE);
     $err = curl_error($curl);
-    curl_close($curl);
     if ($err)
     {
         $arrayResp = array(
@@ -222,7 +220,6 @@ function sendTE()
     $respuesta = curl_exec($curl);
     $status = curl_getinfo($curl, CURLINFO_HTTP_CODE);
     $err = curl_error($curl);
-    curl_close($curl);
     if ($err)
     {
         $arrayResp = array(

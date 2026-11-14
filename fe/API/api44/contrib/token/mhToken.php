@@ -89,7 +89,6 @@ function token()
     $respuesta  = curl_exec($curl);
     $status     = curl_getinfo($curl, CURLINFO_HTTP_CODE);
     $err        = json_decode(curl_error($curl));
-    curl_close($curl);
 
     if ($err)
     {

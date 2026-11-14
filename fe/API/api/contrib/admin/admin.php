@@ -1208,7 +1208,6 @@ function getEstadoHacienda($Documento, $TipoDoc)
             curl_exec($ch);
             if (!curl_errno($ch)) {
                 $api_ok = true;
-                curl_close($ch);
             } else {
                 $api_ok = false;
             }
@@ -1222,7 +1221,6 @@ function getEstadoHacienda($Documento, $TipoDoc)
             curl_exec($ch);
             if (!curl_errno($ch)) {
                 $idp_ok = true;
-                curl_close($ch);
             } else {
                 $idp_ok = false;
             }
@@ -1588,7 +1586,6 @@ function CloseTokenSession($sessionID)
         $respuesta = curl_exec($curl);
         $status = curl_getinfo($curl, CURLINFO_HTTP_CODE);
         $err = json_decode(curl_error($curl));
-        curl_close($curl);
 
         if ($err) {
             Bitacora($sessionID, "err=$err,resp=$respuesta,status=$status");

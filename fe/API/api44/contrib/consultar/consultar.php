@@ -60,7 +60,6 @@ function consultar()
         $header = substr($response, 0, $header_size);
         $body = substr($response, $header_size);
 
-        curl_close($curl);
 
         foreach(explode("\r\n", trim(substr($response, 0, $header_size))) as $row) {
             if(preg_match('/(.*?): (.*)/', $row, $matches)) {

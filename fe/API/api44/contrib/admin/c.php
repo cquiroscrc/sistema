@@ -321,7 +321,6 @@ function fetch_api($identificacion) {
             if ($response === false) {
                 $curl_error = curl_error($ch);
                 $curl_errno = curl_errno($ch);
-                curl_close($ch);
                 throw new Exception("cURL error ({$curl_errno}): {$curl_error}");
             }
 
@@ -342,7 +341,6 @@ function fetch_api($identificacion) {
                 }
             }
 
-            curl_close($ch);
             $request_count++;
 
             if ($http_status == 429) {
