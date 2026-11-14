@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import { CalendarClock, Play, Square, Zap, AlertTriangle, ShieldAlert, Maximize2, HardDrive, Settings, Send, Info } from 'lucide-react';
+import { CalendarClock, Play, Square, Zap, AlertTriangle, Maximize2, HardDrive, Settings, Send, Info } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Modal, useToast } from '../components/ui';
@@ -153,14 +153,6 @@ export default function Tareas({ onCambio }: { onCambio?: () => void }) {
   const fila = (k: string, v: React.ReactNode) => <div className="flex justify-between gap-4 py-1.5 text-sm"><span className="text-muted-foreground">{k}</span><span className="text-right font-medium">{v || '—'}</span></div>;
   const esperado = modal ? PALABRA[modal.acc] : '';
   return <div className="space-y-6">
-    <Card className="border-warning/40">
-      <CardHeader><CardTitle className="flex items-center gap-2"><ShieldAlert className="h-4 w-4 text-warning" />Corte desde 172.16.12.3</CardTitle></CardHeader>
-      <CardBody className="space-y-2 text-sm text-muted-foreground">
-        <p>Cierre de caja, mensajería y prefacturas siguen corriendo en el servidor Windows. Activarlas aquí <b className="text-foreground">duplicaría el trabajo</b> (incluido el correo de cierre de caja).</p>
-        <p>Ejecutar ahora lanza esa tarea una sola vez y no cambia el horario. El respaldo diario de la BD inventario (18:00, pat-sql-web01) está habilitado en este servidor.</p>
-        <p>En el corte de las otras tres: deshabilite primero las tareas programadas de Windows y luego actívelas aquí (escribir ACTIVAR).</p>
-      </CardBody>
-    </Card>
     <div className="grid gap-6 xl:grid-cols-2">
       {(items ?? []).map(t => {
         const activo = t.enabled;
