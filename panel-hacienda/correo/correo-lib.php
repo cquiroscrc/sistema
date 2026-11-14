@@ -12,7 +12,7 @@ declare(strict_types=1);
 
 const LP_SMTP_CFG = '/var/lib/lospaticas/panel/smtp.json';
 const LP_SMTP_KEY = '/etc/lospaticas/smtp.key';
-const LP_PHPMAILER = '/var/www/lospaticas/sistema/fe/API/api44/tools/phpmailer/vendor/phpmailer/phpmailer/src';
+const LP_PHPMAILER = __DIR__ . '/phpmailer/src'; // PHPMailer 6.12 propio del panel (el de fe/API sigue intacto)
 const LP_SMTP_CIFRADOS = ['starttls', 'ssl', 'ninguno'];
 
 function lp_smtp_clave(): string
@@ -117,6 +117,7 @@ function lp_smtp_mailer(?array $cfg = null): \PHPMailer\PHPMailer\PHPMailer
     $c = $cfg ?? lp_smtp_leer();
     if (empty($c['host'])) throw new RuntimeException('Correo SMTP no configurado');
     $m = new \PHPMailer\PHPMailer\PHPMailer(true);
+    $m->setLanguage('es', dirname(LP_PHPMAILER) . '/language/');
     $m->isSMTP();
     $m->Host = $c['host'];
     $m->Port = (int)$c['puerto'];

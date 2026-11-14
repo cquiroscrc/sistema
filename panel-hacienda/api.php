@@ -53,6 +53,7 @@ try {
         case 'espacio':         ph_json(api_espacio());
         case 'caja_config':     ph_json(api_caja_config());
         case 'caja_config_guardar': ph_require_post(); ph_json(api_caja_config_guardar());
+        case 'caja_correo_test':    ph_require_post(); ph_json(api_caja_correo_test());
         default:         ph_json(['ok' => false, 'error' => 'Accion desconocida'], 400);
     }
 } catch (Throwable $e) {
