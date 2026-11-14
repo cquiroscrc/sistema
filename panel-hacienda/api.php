@@ -8,6 +8,7 @@ require_once __DIR__ . '/tareas/tareas-lib.php';
 require_once __DIR__ . '/tareas/retencion-lib.php';
 require_once __DIR__ . '/correo/correo-lib.php';
 require_once __DIR__ . '/correo/api-correo.php';
+require_once __DIR__ . '/certificados/cert-lib.php';
 $a = $_GET['a'] ?? '';
 try {
     // Sin sesion solo se permite: sesion (token CSRF y estado), login y logout.
@@ -27,6 +28,8 @@ try {
         case 'docs':     ph_json(api_docs());
         case 'doc':      ph_json(api_doc());
         case 'cola':     ph_json(api_cola());
+        case 'certificados': ph_json(api_certificados());
+        case 'certificado_subir': ph_require_post(); ph_json(api_certificado_subir());
         case 'reintentar': ph_require_post(); ph_json(api_reintentar());
         case 'servicio': ph_require_post(); ph_json(api_servicio());
         case 'pdf':      api_pdf();

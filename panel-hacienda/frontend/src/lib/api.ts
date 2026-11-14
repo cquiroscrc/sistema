@@ -31,6 +31,20 @@ export async function api<T = any>(a: string, params: Record<string, string | nu
   return j as T;
 }
 
+/** POST multipart (subida de archivos) con el token CSRF; mismo manejo de 401/403 que api(). */
+export async function apiUpload<T = any>(a: string, form: FormData, reintento = false): Promise<T> {
+  const fd = new FormData();
+  form.forEach((v, k) => fd.append(k, v));
+  fd.set('csrf', csrf);
+  const r = await fetch(apiUrl(a), { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'X-Requested-With': 'panel' } });
+  let j: any;
+  try { j = await r.json(); } catch { j = { ok: false, error: `Respuesta inválida del servidor (${r.status})` }; }
+  if (r.status === 401) { onUnauthorized(); throw new NoAutorizado(j.error || 'Sesión expirada'); }
+  if (j && j.csrf) csrf = j.csrf;
+  if (r.status === 403 && j?.codigo === 'csrf' && !reintento) { await api('sesion'); return apiUpload<T>(a, form, true); }
+  return j as T;
+}
+
 export type Estado = 'aceptado' | 'rechazado' | 'error' | 'pendiente' | 'enviando' | 'reintentar' | string;
 
 export interface MigResumen { total: number | null; pendientes: number | null; nombres: string[]; modificadas: string[]; revisado?: string; error?: string }

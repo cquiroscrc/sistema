@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Mail, Save, PlugZap, KeyRound, HardDrive, FolderSync } from 'lucide-react';
+import { Mail, Save, PlugZap, KeyRound, HardDrive, FolderSync, FileKey2 } from 'lucide-react';
+import Certificados from '../components/Certificados';
 import RutasDEData from './RutasDEData';
 import { api } from '../lib/api';
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Label, Select, Tabs, Spinner, useToast } from '../components/ui';
 
-export type Pestana = 'correo' | 'respaldos' | 'rutas';
+export type Pestana = 'correo' | 'respaldos' | 'rutas' | 'certificados';
 type Smtp = { host: string; puerto: number; cifrado: 'starttls' | 'ssl' | 'ninguno'; usuario: string; remitente: string; remitente_nombre: string; password_guardada: boolean; configurado: boolean; actualizado?: string | null; actualizado_por?: string | null };
 const PUERTO: Record<Smtp['cifrado'], number> = { starttls: 587, ssl: 465, ninguno: 25 };
 
@@ -110,9 +111,11 @@ export default function Configuracion({ tab, onTab }: { tab: Pestana; onTab: (t:
       { id: 'correo', label: <span className="inline-flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />Correo</span> },
       { id: 'respaldos', label: <span className="inline-flex items-center gap-1.5"><HardDrive className="h-3.5 w-3.5" />Respaldos</span> },
       { id: 'rutas', label: <span className="inline-flex items-center gap-1.5"><FolderSync className="h-3.5 w-3.5" />Rutas</span> },
+      { id: 'certificados', label: <span className="inline-flex items-center gap-1.5"><FileKey2 className="h-3.5 w-3.5" />Certificados</span> },
     ]} />
     {tab === 'correo' && <Correo />}
     {tab === 'respaldos' && <Respaldos />}
     {tab === 'rutas' && <RutasDEData />}
+    {tab === 'certificados' && <Certificados />}
   </div>;
 }

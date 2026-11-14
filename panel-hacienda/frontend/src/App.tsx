@@ -16,7 +16,7 @@ import BuzonFE from './pages/BuzonFE';
 import MigracionesAviso from './components/MigracionesAviso';
 
 export type Vista = 'inicio' | 'comprobantes' | 'comprobantes/cola' | 'servicios/envio' | 'servicios/recepcion' | 'tareas' | 'auditoria/logs'
-  | 'configuracion' | 'configuracion/respaldos' | 'configuracion/rutas';
+  | 'configuracion' | 'configuracion/respaldos' | 'configuracion/rutas' | 'configuracion/certificados';
 type Item = { id: Vista; label: string; icon: any };
 type Grupo = { label: string; icon: any; hijos: Item[] };
 const MENU: (Item | Grupo)[] = [
@@ -38,6 +38,7 @@ const NAV: Item[] = MENU.flatMap(m => 'hijos' in m ? m.hijos : [m]);
 const EXTRA: Item[] = [
   { id: 'configuracion/respaldos', label: 'Configuración', icon: Settings },
   { id: 'configuracion/rutas', label: 'Configuración', icon: Settings },
+  { id: 'configuracion/certificados', label: 'Configuración', icon: Settings },
 ];
 // Rutas viejas -> nuevas
 const ALIAS: Record<string, Vista> = { registro: 'auditoria/logs', cola: 'comprobantes/cola', servicio: 'servicios/envio', buzon: 'servicios/recepcion', rutas: 'configuracion/rutas', dedata: 'configuracion/rutas' };
@@ -47,7 +48,7 @@ const vistaDeHash = (): Vista => {
   return [...NAV, ...EXTRA].some(n => n.id === h) ? h as Vista : 'inicio';
 };
 const navActivo = (n: Item, v: Vista) => n.id === v || (n.id === 'configuracion' && v.startsWith('configuracion/'));
-const pestanaDe = (v: Vista): Pestana => v === 'configuracion/respaldos' ? 'respaldos' : v === 'configuracion/rutas' ? 'rutas' : 'correo';
+const pestanaDe = (v: Vista): Pestana => v === 'configuracion/respaldos' ? 'respaldos' : v === 'configuracion/rutas' ? 'rutas' : v === 'configuracion/certificados' ? 'certificados' : 'correo';
 
 export default function App() {
   const toast = useToast();
