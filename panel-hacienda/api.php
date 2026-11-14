@@ -123,8 +123,12 @@ function api_logs(): array
     $since = isset($_GET['since']) && $_GET['since'] !== '' ? (string)$_GET['since'] : null;
     $before = isset($_GET['before']) && $_GET['before'] !== '' ? (string)$_GET['before'] : null;
 
-    if ($src === 'bitacora') {
+    if (in_array($src, ['bitacora', 'bitacora_fe', 'bitacora_panel'], true)) {
         $w = []; $p = [];
+        // Filas del panel: SESSION_ID = 'panel-hacienda' (ph_bitacora); el resto es de la facturacion electronica.
+        // El panel escribe en BITACORA desde su instalacion (2026-11-04): ese limite usa IX_FECHAS y evita recorrer toda la tabla.
+        if ($src === 'bitacora_panel') { $w[] = "SESSION_ID = 'panel-hacienda'"; $w[] = "FECHA_HORA >= '20261104'"; }
+        elseif ($src === 'bitacora_fe') $w[] = "(SESSION_ID IS NULL OR SESSION_ID <> 'panel-hacienda')";
         if ($since !== null) { $w[] = 'FECHA_HORA > CONVERT(datetime, ?, 121)'; $p[] = ph_date($since) ?? date('Y-m-d H:i:s'); }
         if ($before !== null) { $w[] = 'FECHA_HORA < CONVERT(datetime, ?, 121)'; $p[] = ph_date($before) ?? date('Y-m-d H:i:s'); }
         if ($desde) { $w[] = 'FECHA_HORA >= CONVERT(datetime, ?, 121)'; $p[] = $desde; }

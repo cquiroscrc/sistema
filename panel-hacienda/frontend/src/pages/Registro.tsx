@@ -5,7 +5,9 @@ import { cn } from '../lib/utils';
 import { Button, Card, Input, Label, Select, Switch, useToast } from '../components/ui';
 
 const FUENTES = [
-  { id: 'bitacora', label: 'Bitácora (dbo.BITACORA)' },
+  { id: 'bitacora', label: 'Bitácora (todo)' },
+  { id: 'bitacora_fe', label: 'Bitácora FE' },
+  { id: 'bitacora_panel', label: 'Bitácora Panel' },
   { id: 'sender', label: 'Salida del servicio (sender.log)' },
   { id: 'errores', label: 'Errores api (_errors.log)' },
   { id: 'php', label: 'Log PHP (api44 / Hacienda)' },
