@@ -123,8 +123,8 @@ function lp_smtp_mailer(?array $cfg = null): \PHPMailer\PHPMailer\PHPMailer
     $m->Timeout = 15;
     $m->CharSet = 'UTF-8';
     $m->SMTPDebug = 0;
-    if ($c['cifrado'] === 'ssl') { $m->SMTPSecure = 'ssl'; $m->SMTPAutoTLS = false; }
-    elseif ($c['cifrado'] === 'starttls') { $m->SMTPSecure = 'tls'; }
+    if ($c['cifrado'] === 'ssl') { $m->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS; $m->SMTPAutoTLS = false; }
+    elseif ($c['cifrado'] === 'starttls') { $m->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS; }
     else { $m->SMTPSecure = ''; $m->SMTPAutoTLS = false; }
     $pw = isset($c['password_plano']) ? (string)$c['password_plano'] : (!empty($c['password']) ? lp_smtp_descifrar((string)$c['password']) : '');
     if ($c['usuario'] !== '' || $pw !== '') { $m->SMTPAuth = true; $m->Username = $c['usuario']; $m->Password = $pw; }
