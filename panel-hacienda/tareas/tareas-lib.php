@@ -35,6 +35,7 @@ function api_tareas(): array
         $lines = []; $rc = 0;
         exec('/usr/bin/sudo -n /usr/local/sbin/paticas-tareas-ctl ' . escapeshellarg($d['id']) . ' status 2>&1', $lines, $rc);
         [$timer, $svc, $log] = ph_tareas_parse(implode("\n", $lines));
+        if ($d['id'] === 'caja_correo') $log = ph_log_sin_html($log);
         $enabled = (($timer['UnitFileState'] ?? '') === 'enabled');
         $item = $d + [
             'enabled' => $enabled,
@@ -96,6 +97,14 @@ function ph_log_normalizar(string $texto): array
     return [$limpio, $truncado];
 }
 
+/** Quita etiquetas HTML y descarta lineas que quedan vacias (salida antigua de caja_correo.php). */
+function ph_log_sin_html(array $lineas): array
+{
+    $out = [];
+    foreach ($lineas as $l) { $t = trim(html_entity_decode(strip_tags((string)$l), ENT_QUOTES | ENT_HTML5, 'UTF-8')); if ($t !== '') $out[] = $t; }
+    return $out;
+}
+
 function ph_log_archivo(string $path): array
 {
     if (!is_file($path) || !is_readable($path)) return [[], false];
@@ -128,6 +137,7 @@ function api_tarea_log(): array
     ];
     if (isset($locales[$id])) {
         [$lineas, $truncado] = ph_log_archivo($locales[$id]);
+        if ($id === 'caja_correo') $lineas = ph_log_sin_html($lineas);
         return ['ok' => true, 'id' => $id, 'lineas' => $lineas, 'truncado' => $truncado];
     }
     $out = []; $rc = 0;

@@ -10,7 +10,8 @@ Group=www-data
 UMask=0027
 StandardOutput=append:/var/log/lospaticas/caja-correo.log
 StandardError=append:/var/log/lospaticas/caja-correo.log
-ExecStart=/usr/bin/curl -sS -L --max-redirs 3 --max-time 180 http://127.0.0.1/utilitarios/caja_correo.php
+# Solo el texto del resultado (sin HTML); pipefail conserva el codigo de salida de curl.
+ExecStart=/bin/bash -o pipefail -c '/usr/bin/curl -sS -L --max-redirs 3 --max-time 180 http://127.0.0.1/utilitarios/caja_correo.php | /usr/local/sbin/paticas-solo-texto'
 Nice=5
 NoNewPrivileges=yes
 PrivateTmp=yes
