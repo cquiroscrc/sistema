@@ -1,4 +1,5 @@
-
+<?php
+declare(strict_types=1);
 /* ---------------- Configuracion > Correo (SMTP) ---------------- */
 function api_config_correo(): array
 {
