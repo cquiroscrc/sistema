@@ -71,20 +71,18 @@ function db_Connect():bool
     global $dbConn;
     global $Error;
 
-    # Create connection
-    grace_debug(__METHOD__ ."-> config['db']['name']: ");
-    grace_debug(conf_get('name', 'db'));
-    grace_debug(__METHOD__ ."-> config['db']['pwd']: ");
-    grace_debug(conf_get('pwd', 'db'));
-    grace_debug(__METHOD__ ."-> config['db']['user']: ");
-    grace_debug(conf_get('user', 'db'));
-    grace_debug(__METHOD__ ."-> config['db']['host']: ");
-    grace_debug(conf_get('host', 'db'));
-
-    $cnString='sqlsrv:server='.conf_get('host', 'db') . ';Database='. conf_get('name', 'db');
+    # Migracion 2026-11-14: usar pdo_dsn de /etc/lospaticas/db.php
+    # (172.16.12.100, paticas_app, Encrypt+TrustServerCertificate).
+    # El DSN armado solo con host,puerto y Database falla con ODBC 18
+    # (certificado auto-firmado del SQL en Docker).
+    $c = require '/etc/lospaticas/db.php';
+    $cnString = $c['pdo_dsn'];
+    if (stripos($cnString, 'LoginTimeout') === false) {
+        $cnString .= ';LoginTimeout=30';
+    }
 
     try {
-        $dbConn = new PDO($cnString, conf_get('user', 'db'), conf_get('pwd', 'db'), [ PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION ] );
+        $dbConn = new PDO($cnString, $c['user'], $c['password'], [ PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION ] );
     }
     
     catch (\PDOException $e){
