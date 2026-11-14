@@ -195,6 +195,22 @@ function ph_systemctl_show(string $unit, array $props): array
     exec($cmd . ' 2>/dev/null', $out);
     $r = [];
     foreach ($out as $l) { [$k, $v] = array_pad(explode('=', $l, 2), 2, ''); $r[$k] = $v; }
+    return ph_fechas_local($r);
+}
+
+/** Fecha de systemd ('Sat 2026-11-14 23:15:00 UTC', '... CST') a hora de Costa Rica: 'sáb 14/11/2026 17:15'. Otros valores no se tocan. */
+function ph_fecha_local(string $v): string
+{
+    if (!preg_match('/^(?:[A-Za-z]{3} )?(\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?)(?: ([A-Za-z]{2,5}|[+-]\d{2}:?\d{2}))?$/', trim($v), $m)) return $v;
+    $cr = new DateTimeZone('America/Costa_Rica');
+    try { $d = new DateTimeImmutable($m[1] . (($m[2] ?? '') !== '' ? ' ' . $m[2] : ''), $cr); } catch (Throwable) { return $v; }
+    $d = $d->setTimezone($cr);
+    return ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'][(int)$d->format('w')] . ' ' . $d->format('d/m/Y H:i');
+}
+
+function ph_fechas_local(array $r): array
+{
+    foreach ($r as $k => $v) if (is_string($v)) $r[$k] = ph_fecha_local($v);
     return $r;
 }
 

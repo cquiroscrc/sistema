@@ -24,7 +24,7 @@ function ph_tareas_parse(string $text): array
             if ($sec === 'timer') $timer[$k] = $v; else $svc[$k] = $v;
         }
     }
-    return [$timer, $svc, $log];
+    return [ph_fechas_local($timer), ph_fechas_local($svc), $log];
 }
 
 function api_tareas(): array
