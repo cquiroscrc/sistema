@@ -41,6 +41,7 @@ try {
         case 'buzon_archivo': api_buzon_archivo();
         case 'dedata_sync': ph_require_post(); ph_json(api_dedata_sync());
         case 'tareas':   ph_json(api_tareas());
+        case 'tarea_log': ph_json(api_tarea_log());
         case 'tarea':    ph_require_post(); ph_json(api_tarea());
         default:         ph_json(['ok' => false, 'error' => 'Accion desconocida'], 400);
     }

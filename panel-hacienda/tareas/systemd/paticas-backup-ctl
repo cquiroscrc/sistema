@@ -1,5 +1,5 @@
 #!/bin/bash
-# Comando forzado SSH: solo status|enable|disable del timer de respaldo inventario.
+# Comando forzado SSH: status|enable|disable del timer, o start del servicio (una corrida, sin cambiar el horario).
 set -euo pipefail
 CMD="${SSH_ORIGINAL_COMMAND:-${1:-}}"
 CMD=$(printf '%s' "$CMD" | tr -d '\r\n')
@@ -16,6 +16,19 @@ case "$CMD" in
     ;;
   disable)
     /usr/bin/systemctl disable --now paticas-backup-inventario.timer
+    ;;
+  start)
+    state=$(/usr/bin/systemctl show paticas-backup-inventario.service -p ActiveState --value)
+    if [ "$state" = "activating" ]; then
+      echo "ya esta en curso" >&2
+      exit 3
+    fi
+    /usr/bin/systemctl start --no-block paticas-backup-inventario.service
+    ;;
+  log)
+    if [ -r /var/log/paticas-backup-inventario.log ]; then
+      tail -c 1500000 /var/log/paticas-backup-inventario.log | tr '\r' '\n' | tail -n 4000
+    fi
     ;;
   *)
     echo "comando no permitido" >&2

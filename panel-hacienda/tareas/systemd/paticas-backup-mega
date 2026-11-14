@@ -1,0 +1,112 @@
+#!/bin/bash
+# Sube un respaldo ya verificado de inventario a la cuenta MEGA. No imprime secretos.
+set -euo pipefail
+FILE="${1:-}"
+ENV=/etc/lospaticas/mega.env
+REMOTE=/Respaldos/inventario
+RETENCION_DIAS=14
+
+log() { echo "$(TZ=America/Costa_Rica date '+%Y-%m-%d %H:%M:%S') mega $*"; }
+die() { log "ERROR $*"; exit 1; }
+
+[ -f "$FILE" ] || die "no existe el archivo"
+[ -r "$ENV" ] || die "no hay credenciales MEGA"
+NOMBRE=$(basename "$FILE")
+case "$NOMBRE" in
+  inventario_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9].bak) ;;
+  *) die "nombre no permitido" ;;
+esac
+command -v mega-whoami >/dev/null 2>&1 || die "falta megacmd"
+command -v mega-cmd >/dev/null 2>&1 || die "falta mega-cmd"
+
+set -a
+# shellcheck disable=SC1090
+. "$ENV"
+set +a
+[ -n "${MEGA_USER:-}" ] && [ -n "${MEGA_PASS:-}" ] || die "credenciales incompletas"
+
+sesion_ok() {
+  mega-whoami 2>/dev/null | grep -F -q -- "$MEGA_USER"
+}
+
+if ! sesion_ok; then
+  TMP=$(mktemp /run/paticas-mega-login.XXXXXX)
+  chmod 600 "$TMP"
+  python3 - "$TMP" << 'PY'
+import os, sys
+path = sys.argv[1]
+user = os.environ["MEGA_USER"]
+password = os.environ["MEGA_PASS"]
+def q(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+with open(path, "w", encoding="utf-8") as fh:
+    fh.write(f"login {q(user)} {q(password)}\nquit\n")
+PY
+  mega-cmd < "$TMP" >/dev/null 2>&1 || true
+  shred -u "$TMP" 2>/dev/null || rm -f "$TMP"
+  sesion_ok || die "login MEGA fallo"
+fi
+unset MEGA_PASS
+
+# mega-mkdir -p sale con error si la carpeta ya existe, y con set -e eso
+# aborta la subida. Si ya está, se sigue; si no, se crea y se comprueba.
+if ! mega-ls "$REMOTE" >/dev/null 2>&1; then
+  mega-mkdir -p "$REMOTE" >/dev/null 2>&1 || true
+  mega-ls "$REMOTE" >/dev/null 2>&1 || die "no se pudo preparar $REMOTE"
+fi
+log "subiendo $NOMBRE bytes=$(stat -c '%s' "$FILE")"
+# El avance de mega-put usa retornos de carro. Se convierte en una línea fechada
+# cada 20 s o cada 1 % para que quede legible en el log del respaldo.
+mega-put -c "$FILE" "$REMOTE/" 2>&1 | python3 -u -c '
+import sys, re, time
+from datetime import datetime
+from zoneinfo import ZoneInfo
+pat = re.compile(r"\((\d+)/(\d+)\s+MB:\s*([\d.]+)\s*%\)")
+tz = ZoneInfo("America/Costa_Rica")
+last_emit = 0.0
+last_pct = -1.0
+buf = ""
+
+def emit(msg: str) -> None:
+    ahora = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+    print(f"{ahora} mega {msg}", flush=True)
+
+while True:
+    chunk = sys.stdin.read(4096)
+    if not chunk:
+        break
+    buf += chunk.replace("\r", "\n")
+    partes = buf.split("\n")
+    buf = partes.pop()
+    for linea in partes:
+        linea = linea.strip()
+        if not linea:
+            continue
+        hallado = pat.search(linea)
+        if hallado:
+            pct = float(hallado.group(3))
+            ahora = time.time()
+            if ahora - last_emit >= 20 or pct - last_pct >= 1:
+                emit(f"progreso {hallado.group(1)}/{hallado.group(2)} MB ({hallado.group(3)}%)")
+                last_emit = ahora
+                last_pct = pct
+        elif "TRANSFERRING" not in linea:
+            emit(linea[:400])
+resto = buf.strip()
+if resto and "TRANSFERRING" not in resto:
+    emit(resto[:400])
+'
+log "subido $REMOTE/$NOMBRE"
+
+CORTE=$(TZ=America/Costa_Rica date -d "$RETENCION_DIAS days ago" +%Y%m%d)
+mega-ls "$REMOTE" | while IFS= read -r linea; do
+  [ -n "$linea" ] || continue
+  candidato=${linea##* }
+  if [[ $candidato =~ ^inventario_([0-9]{8})_[0-9]{4}\.bak$ ]]; then
+    if [[ ${BASH_REMATCH[1]} < $CORTE ]]; then
+      mega-rm -f "$REMOTE/$candidato"
+      log "retencion borra $candidato"
+    fi
+  fi
+done
+log "fin"

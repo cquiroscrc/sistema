@@ -77,16 +77,17 @@ export const Pill = ({ className, ...p }: React.HTMLAttributes<HTMLSpanElement>)
 function useEsc(open: boolean, onClose: () => void) {
   React.useEffect(() => { if (!open) return; const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose(); window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [open, onClose]);
 }
-export function Modal({ open, onClose, title, children, footer, tone }: { open: boolean; onClose: () => void; title: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode; tone?: 'danger' | 'warning' }) {
+export function Modal({ open, onClose, title, children, footer, tone, size = 'md' }: { open: boolean; onClose: () => void; title: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode; tone?: 'danger' | 'warning'; size?: 'md' | 'full' }) {
   useEsc(open, onClose);
   if (!open) return null;
-  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  const completa = size === 'full';
+  return <div className={cn('fixed inset-0 z-50 flex', completa ? 'items-stretch p-0' : 'items-center justify-center p-4')}>
     <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-    <div role="dialog" aria-modal className={cn('relative w-full max-w-lg rounded-xl border bg-card shadow-2xl', tone === 'danger' && 'border-danger/40', tone === 'warning' && 'border-warning/50')}>
+    <div role="dialog" aria-modal className={cn('relative flex flex-col bg-card shadow-2xl', completa ? 'h-full w-full max-w-none rounded-none border-0' : 'w-full max-w-lg rounded-xl border', tone === 'danger' && 'border-danger/40', tone === 'warning' && 'border-warning/50')}>
       <div className="flex items-center justify-between border-b px-5 py-4"><h2 className="font-semibold">{title}</h2>
         <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-muted" aria-label="Cerrar"><X className="h-4 w-4" /></button></div>
-      <div className="px-5 py-4 text-sm">{children}</div>
-      {footer && <div className="flex justify-end gap-2 border-t bg-muted/40 px-5 py-3 rounded-b-xl">{footer}</div>}
+      <div className={cn('text-sm', completa ? 'flex min-h-0 flex-1 flex-col px-5 py-4' : 'px-5 py-4')}>{children}</div>
+      {footer && <div className={cn('flex justify-end gap-2 border-t bg-muted/40 px-5 py-3', !completa && 'rounded-b-xl')}>{footer}</div>}
     </div></div>;
 }
 export function Drawer({ open, onClose, title, children, footer }: { open: boolean; onClose: () => void; title: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode }) {
