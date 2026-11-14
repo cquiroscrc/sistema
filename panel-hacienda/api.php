@@ -5,6 +5,8 @@ require __DIR__ . '/lib.php';
 require_once __DIR__ . '/buzon/buzon-lib.php';
 require_once __DIR__ . '/db/migrar-lib.php';
 require_once __DIR__ . '/tareas/tareas-lib.php';
+require_once __DIR__ . '/correo/correo-lib.php';
+require_once __DIR__ . '/correo/api-correo.php';
 $a = $_GET['a'] ?? '';
 try {
     // Sin sesion solo se permite: sesion (token CSRF y estado), login y logout.
@@ -43,6 +45,9 @@ try {
         case 'tareas':   ph_json(api_tareas());
         case 'tarea_log': ph_json(api_tarea_log());
         case 'tarea':    ph_require_post(); ph_json(api_tarea());
+        case 'config_correo':         ph_json(api_config_correo());
+        case 'config_correo_guardar': ph_require_post(); ph_json(api_config_correo_guardar());
+        case 'config_correo_probar':  ph_require_post(); ph_json(api_config_correo_probar());
         case 'respaldos':       ph_json(api_respaldos());
         case 'respaldo_borrar': ph_require_post(); ph_json(api_respaldo_borrar());
         case 'espacio':         ph_json(api_espacio());
