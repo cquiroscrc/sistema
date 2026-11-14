@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { CalendarClock, Play, Square, Zap, AlertTriangle, ShieldAlert, Maximize2, HardDrive, Settings, Send } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
+import { CalendarClock, Play, Square, Zap, AlertTriangle, ShieldAlert, Maximize2, HardDrive, Settings, Send, Info } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Modal, useToast } from '../components/ui';
@@ -108,6 +108,21 @@ function avisoCorrida(id: string): string {
   }
 }
 
+/** Ícono de información con tooltip: hover, foco con teclado y toque en móvil; Esc lo cierra. */
+function InfoTip({ texto }: { texto: React.ReactNode }) {
+  const [abierto, setAbierto] = useState(false);
+  const id = useId();
+  return <span className="relative inline-flex" onMouseEnter={() => setAbierto(true)} onMouseLeave={() => setAbierto(false)}>
+    <button type="button" aria-label="Más información" aria-describedby={abierto ? id : undefined} aria-expanded={abierto}
+      className="rounded-full p-0.5 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={() => setAbierto(a => !a)} onFocus={() => setAbierto(true)} onBlur={() => setAbierto(false)}
+      onKeyDown={e => { if (e.key === 'Escape') setAbierto(false); }}>
+      <Info className="h-4 w-4" />
+    </button>
+    {abierto && <span role="tooltip" id={id} className="absolute left-1/2 top-full z-20 mt-2 w-72 max-w-[80vw] -translate-x-1/2 rounded-md border bg-card p-3 text-xs font-normal leading-relaxed text-card-foreground shadow-lg">{texto}</span>}
+  </span>;
+}
+
 export default function Tareas({ onCambio }: { onCambio?: () => void }) {
   const toast = useToast();
   const [items, setItems] = useState<Tarea[] | null>(null);
@@ -152,8 +167,8 @@ export default function Tareas({ onCambio }: { onCambio?: () => void }) {
         return <Card key={t.id}>
           <CardHeader>
             <div className="min-w-0">
-              <CardTitle className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" />{t.nombre}</CardTitle>
-              <p className="mt-0.5 text-xs text-muted-foreground">{t.descripcion} · {t.hora} · {t.servidor}</p>
+              <CardTitle className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" />{t.nombre}
+                <InfoTip texto={<><div>{t.descripcion}</div><div className="mt-1 text-muted-foreground">{t.hora} · {t.servidor}</div></>} /></CardTitle>
             </div>
             <span className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset', t.corriendo ? 'bg-info/10 text-info ring-info/30' : activo ? 'bg-success/10 text-success ring-success/30' : 'bg-muted text-muted-foreground ring-border')}>
               <span className={cn('h-2 w-2 rounded-full', t.corriendo || activo ? 'bg-current animate-pulse' : 'bg-muted-foreground')} />{t.corriendo ? 'EN CURSO' : activo ? 'HABILITADA' : 'DESHABILITADA'}</span>
