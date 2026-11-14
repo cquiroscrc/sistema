@@ -73,6 +73,7 @@ export default function App() {
     className={cn('flex w-full items-center gap-3 rounded-md px-3 text-sm transition-colors', sub ? 'py-1.5' : 'py-2', navActivo(n, vista) ? 'bg-white/10 text-white font-medium' : 'hover:bg-white/5 hover:text-white')}>
     <n.icon className={cn('h-4 w-4', navActivo(n, vista) && 'text-sidebar-accent')} />{n.label}
     {n.id === 'servicios/envio' && <span className={cn('ml-auto h-2 w-2 rounded-full', !!status?.servicio_activo ? 'bg-emerald-400 shadow-[0_0_8px] shadow-emerald-400' : 'bg-slate-500')} />}
+    {n.id === 'servicios/recepcion' && <span title={status?.buzon === 'activo' ? 'Buzón activo' : status?.buzon === 'error' ? 'Buzón con fallo' : 'Buzón detenido'} className={cn('ml-auto h-2 w-2 rounded-full', status?.buzon === 'activo' ? 'bg-emerald-400 shadow-[0_0_8px] shadow-emerald-400' : status?.buzon === 'error' ? 'bg-red-500 shadow-[0_0_8px] shadow-red-500' : 'bg-slate-500')} />}
   </button>;
   const grupo = MENU.find(m => 'hijos' in m && m.hijos.some(h => h.id === vista)) as Grupo | undefined;
   const titulo = (grupo ? grupo.label + ' · ' : '') + ([...NAV, ...EXTRA].find(n => n.id === vista)?.label ?? '');

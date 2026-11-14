@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState , useRef} from 'react';
 import { Search, FileText, FileDown, Eye, RotateCcw, ChevronLeft, ChevronRight, ExternalLink, Copy } from 'lucide-react';
 import { api, apiUrl, type DocRow, type Status } from '../lib/api';
 import { fmtMonto, fmtNum, cn } from '../lib/utils';
+import { SortTh, siguienteOrden, type Orden } from '../components/SortTh';
 import { Button, Card, Drawer, Empty, EstadoBadge, Input, Label, Modal, Pill, Select, Spinner, Tabs, useToast } from '../components/ui';
 
 type F = { estado: string; tipo: string; q: string; desde: string; hasta: string };
@@ -11,13 +12,16 @@ export default function Comprobantes({ status, onCambio }: { status: Status | nu
   const [page, setPage] = useState(1);
   const [data, setData] = useState<{ total: number; size: number; rows: DocRow[] } | null>(null);
   const [sel, setSel] = useState<{ tipo: string; numero: string } | null>(null);
-  const cargar = useCallback(async (p: number, x: F) => {
-    setData(null); const j = await api('docs', { ...x, page: p, size: 25 });
+  const [orden, setOrden] = useState<Orden>({ col: 'fecha', dir: 'desc' });
+  const ordRef = useRef(orden);
+  const cargar = useCallback(async (p: number, x: F, o: Orden = ordRef.current) => {
+    setData(null); const j = await api('docs', { ...x, page: p, size: 25, orden: o.col, dir: o.dir });
     setData(j.ok ? j : { total: 0, size: 25, rows: [] }); setPage(p);
   }, []);
   useEffect(() => { cargar(1, f); /* eslint-disable-next-line */ }, []);
   const set = (k: keyof F) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF(s => ({ ...s, [k]: e.target.value }));
   const paginas = data ? Math.max(1, Math.ceil(data.total / data.size)) : 1;
+  const ordenar = (c: string) => { const o = siguienteOrden(ordRef.current, c); ordRef.current = o; setOrden(o); cargar(1, f, o); };
   return <div className="space-y-4">
     <Card className="p-4">
       <form className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 [&>*]:min-w-0" onSubmit={e => { e.preventDefault(); cargar(1, f); }}>
@@ -33,7 +37,8 @@ export default function Comprobantes({ status, onCambio }: { status: Status | nu
     <Card className="overflow-hidden">
       <div className="overflow-x-auto"><table className="w-full text-sm">
         <thead className="bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground"><tr>
-          {['Fecha', 'Documento', 'Consecutivo / clave', 'Receptor', 'Total', 'Estado', ''].map(h => <th key={h} className={cn('px-4 py-3 font-medium', h === 'Total' && 'text-right')}>{h}</th>)}</tr></thead>
+          {([['Fecha', 'fecha'], ['Documento', 'documento'], ['Consecutivo / clave', 'consecutivo'], ['Receptor', 'receptor'], ['Total', 'total'], ['Estado', 'estado'], ['', '']] as const).map(([h, c]) =>
+            <SortTh key={h || 'acc'} label={h} col={c || undefined} orden={orden} onSort={ordenar} className={h === 'Total' ? 'text-right' : undefined} />)}</tr></thead>
         <tbody className="divide-y">
           {!data ? <tr><td colSpan={7} className="p-10 text-center"><Spinner /></td></tr> : !(data.rows ?? []).length ? <tr><td colSpan={7}><Empty>Sin comprobantes para el filtro.</Empty></td></tr> :
             (data.rows ?? []).map(r => <tr key={r.tipo + r.numero} className="cursor-pointer hover:bg-muted/40" onClick={() => setSel({ tipo: r.tipo, numero: r.numero })}>

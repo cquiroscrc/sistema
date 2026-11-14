@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, Info, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../lib/api';
 import { fmtMonto, fmtNum } from '../lib/utils';
+import { SortTh, siguienteOrden, type Orden } from '../components/SortTh';
 import { Button, Card, Empty, Input, Label, Pill, Select, Spinner } from '../components/ui';
 
 type F = { estado: string; tipo: string; q: string; desde: string; hasta: string };
@@ -12,14 +13,17 @@ export default function Cola() {
   const [f, setF] = useState<F>(VACIO);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<{ total: number; size: number; rows: Fila[] } | null>(null);
-  const cargar = useCallback(async (p: number, x: F) => {
+  const [orden, setOrden] = useState<Orden>({ col: 'fecha', dir: 'asc' });
+  const ordRef = useRef(orden);
+  const cargar = useCallback(async (p: number, x: F, o: Orden = ordRef.current) => {
     setData(null);
-    try { const j = await api('cola', { ...x, page: p, size: 25 }); setData(j.ok ? j : { total: 0, size: 25, rows: [] }); setPage(p); }
+    try { const j = await api('cola', { ...x, page: p, size: 25, orden: o.col, dir: o.dir }); setData(j.ok ? j : { total: 0, size: 25, rows: [] }); setPage(p); }
     catch { /* 401 manejado */ }
   }, []);
   useEffect(() => { cargar(1, VACIO); }, [cargar]);
   const set = (k: keyof F) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF(s => ({ ...s, [k]: e.target.value }));
   const paginas = data ? Math.max(1, Math.ceil(data.total / data.size)) : 1;
+  const ordenar = (c: string) => { const o = siguienteOrden(ordRef.current, c); ordRef.current = o; setOrden(o); cargar(1, f, o); };
   return <div className="space-y-4">
     <Card className="p-4">
       <form className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 [&>*]:min-w-0" onSubmit={e => { e.preventDefault(); cargar(1, f); }}>
@@ -34,13 +38,14 @@ export default function Cola() {
     </Card>
     <Card className="overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Info className="h-3.5 w-3.5" />Documentos que tomaría el servicio de envío. Misma consulta que <code>ProcesarPendientesEnvio</code> (solo lectura), del más antiguo al más reciente.</p>
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Info className="h-3.5 w-3.5" />Documentos que tomaría el servicio de envío. Misma consulta que <code>ProcesarPendientesEnvio</code> (solo lectura), por defecto del más antiguo al más reciente (clic en un encabezado para ordenar).</p>
         <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => { setF(VACIO); cargar(1, VACIO); }}>Limpiar</Button>
           <Button size="sm" variant="outline" onClick={() => cargar(page, f)}><RefreshCw className="h-3.5 w-3.5" />Actualizar</Button></div>
       </div>
       <div className="overflow-x-auto"><table className="w-full text-sm">
         <thead className="bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground"><tr>
-          {['Fecha', 'Documento', 'Consecutivo / clave', 'Receptor', 'Total', 'Estado previo'].map(h => <th key={h} className={'px-4 py-3 font-medium' + (h === 'Total' ? ' text-right' : '')}>{h}</th>)}</tr></thead>
+          {([['Fecha', 'fecha'], ['Documento', 'documento'], ['Consecutivo / clave', 'consecutivo'], ['Receptor', 'receptor'], ['Total', 'total'], ['Estado previo', 'estado']] as const).map(([h, c]) =>
+            <SortTh key={h} label={h} col={c} orden={orden} onSort={ordenar} className={h === 'Total' ? 'text-right' : undefined} />)}</tr></thead>
         <tbody className="divide-y">{!data ? <tr><td colSpan={6} className="p-10 text-center"><Spinner /></td></tr> : !data.rows.length ? <tr><td colSpan={6}><Empty>Sin documentos en cola para el filtro.</Empty></td></tr> :
           data.rows.map(r => <tr key={r.TIPO_DOCUMENTO + r.DOCUMENTO} className="hover:bg-muted/40">
             <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted-foreground">{r.FECHA.slice(0, 16)}</td>

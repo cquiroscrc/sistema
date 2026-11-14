@@ -64,6 +64,19 @@ try {
     ph_json(['ok' => false, 'error' => ph_mask(ph_utf8($e->getMessage()))], 500);
 }
 
+/** Semáforo de Recepción (timers del buzón FE): activo | inactivo | error. */
+function ph_buzon_semaforo(): string
+{
+    $activos = 0; $units = ['paticas-buzon-fe', 'paticas-buzon-fe-info'];
+    foreach ($units as $u) {
+        $t = ph_systemctl_show($u . '.timer', ['ActiveState']);
+        $sv = ph_systemctl_show($u . '.service', ['Result', 'ActiveState']);
+        if (($t['ActiveState'] ?? '') === 'failed' || ($sv['ActiveState'] ?? '') === 'failed' || !in_array($sv['Result'] ?? '', ['', 'success'], true)) return 'error';
+        if (($t['ActiveState'] ?? '') === 'active') $activos++;
+    }
+    return $activos === count($units) ? 'activo' : 'inactivo';
+}
+
 function api_status(): array
 {
     $t = ph_systemctl_show(PH_UNIT . '.timer', ['ActiveState', 'UnitFileState', 'LastTriggerUSec', 'NextElapseUSecRealtime']);
@@ -77,6 +90,7 @@ function api_status(): array
         'ahora' => date('Y-m-d H:i:s'),
         'usuario' => ph_user(),
         'servicio_activo' => ($t['ActiveState'] ?? '') === 'active',
+        'buzon' => ph_buzon_semaforo(),
         'timer' => $t, 'servicio' => $s,
         'bd' => $info + ['restaurada' => $restore],
         'ultima_bitacora' => $q("SELECT CONVERT(varchar(19), MAX(FECHA_HORA), 120) FROM dbo.BITACORA"),
@@ -189,12 +203,26 @@ function estado_ui(array $r): string
     return $e !== '' ? $e : 'pendiente';
 }
 
+/** ORDER BY desde ?orden=&dir= con lista blanca de columnas (nunca se concatena texto del usuario). */
+function ph_orden(array $mapa, string $def, string $defDir, array $desempate): array
+{
+    $o = (string)($_GET['orden'] ?? '');
+    if (!isset($mapa[$o])) $o = $def;
+    $d = strtolower((string)($_GET['dir'] ?? ''));
+    if (!in_array($d, ['asc', 'desc'], true)) $d = $o === $def ? $defDir : 'asc';
+    $partes = array_map(fn($c) => $c . ' ' . strtoupper($d), $mapa[$o]);
+    foreach ($desempate as $c => $dir) if (!in_array($c, $mapa[$o], true)) $partes[] = "$c $dir";
+    return [implode(', ', $partes), $o, $d];
+}
+
 function api_docs(): array
 {
     $p = [];
     $where = docs_where($p);
     $page = max(1, (int)($_GET['page'] ?? 1)); $size = max(10, min(200, (int)($_GET['size'] ?? 50)));
     $off = ($page - 1) * $size;
+    [$ord, $oCol, $oDir] = ph_orden(['fecha' => ['d.FECHA_HORA'], 'documento' => ['d.TIPO_DOC', 'd.NUMERO_DOC'], 'consecutivo' => ['SUBSTRING(d.SELLO_SAT, 22, 20)'],
+        'receptor' => ['d.NIT_RECEPTOR'], 'total' => ['d.TOTALCOMPROBANTE'], 'estado' => ['d.ESTADO']], 'fecha', 'desc', ['d.FECHA_HORA' => 'DESC', 'd.NUMERO_DOC' => 'ASC']);
     $db = ph_db();
     $st = $db->prepare("SELECT COUNT(*) FROM dbo.DOC_ELECTRONICO_PROCESADO d $where"); $st->execute($p); $total = (int)$st->fetchColumn();
     $st = $db->prepare("SELECT RTRIM(d.TIPO_DOC) TIPO_DOC, RTRIM(d.NUMERO_DOC) NUMERO_DOC, RTRIM(d.SELLO_SAT) SELLO_SAT, CONVERT(varchar(19), d.FECHA_HORA, 120) FECHA_HORA,
@@ -202,7 +230,7 @@ function api_docs(): array
         d.ENVIADO, d.ACEPTADO, RTRIM(d.EMAIL_ENVIADO) EMAIL_ENVIADO, LEFT(d.ULTIMO_ERROR, 300) ULTIMO_ERROR,
         CASE WHEN d.XML_RESPUESTA IS NULL OR d.XML_RESPUESTA = '' THEN 0 ELSE 1 END TIENE_RESP,
         CASE WHEN DATALENGTH(d.PDF) > 0 THEN 1 ELSE 0 END TIENE_PDF, d.PDF_PATH
-        FROM dbo.DOC_ELECTRONICO_PROCESADO d $where ORDER BY d.FECHA_HORA DESC OFFSET $off ROWS FETCH NEXT $size ROWS ONLY");
+        FROM dbo.DOC_ELECTRONICO_PROCESADO d $where ORDER BY $ord OFFSET $off ROWS FETCH NEXT $size ROWS ONLY");
     $st->execute($p);
     $rows = [];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -218,7 +246,7 @@ function api_docs(): array
             'pdf' => (int)$r['TIENE_PDF'] === 1 || ($clave !== '' && ph_dedata_file($r['PDF_PATH'], $r['FECHATIMBRADO'], $clave . '.pdf') !== null),
         ];
     }
-    return ['ok' => true, 'total' => $total, 'page' => $page, 'size' => $size, 'rows' => $rows];
+    return ['ok' => true, 'total' => $total, 'page' => $page, 'size' => $size, 'orden' => $oCol, 'dir' => $oDir, 'rows' => $rows];
 }
 
 function xml_pretty(?string $x): string
@@ -315,11 +343,13 @@ function api_cola(): array
     $f = cola_filtros($p);
     $page = max(1, (int)($_GET['page'] ?? 1)); $size = max(10, min(200, (int)($_GET['size'] ?? 25)));
     $off = ($page - 1) * $size;
+    [$ord, $oCol, $oDir] = ph_orden(['fecha' => ['v.FECHA'], 'documento' => ['v.TIPO_DOCUMENTO', 'v.DOCUMENTO'], 'consecutivo' => ['v.CLAVE'],
+        'receptor' => ['v.NIT'], 'total' => ['v.TOTALFACTURA'], 'estado' => ['p.ESTADO']], 'fecha', 'asc', ['v.FECHA' => 'ASC', 'v.DOCUMENTO' => 'ASC']);
     $db = ph_db();
     $st = $db->prepare('SELECT COUNT(*) ' . cola_desde() . $f); $st->execute($p); $total = (int)$st->fetchColumn();
     $st = $db->prepare("SELECT RTRIM(v.TIPO_DOCUMENTO) TIPO_DOCUMENTO, RTRIM(v.DOCUMENTO) DOCUMENTO, RTRIM(v.NIT) NIT, RTRIM(v.CLIENTE) CLIENTE, RTRIM(v.CORREO) CORREO,
         v.TOTALFACTURA, RTRIM(v.SAT) SAT, RTRIM(v.CLAVE) CLAVE, CONVERT(varchar(19), v.FECHA, 120) FECHA, RTRIM(p.ESTADO) ESTADO
-        " . cola_desde() . $f . " ORDER BY v.FECHA ASC, v.DOCUMENTO OFFSET $off ROWS FETCH NEXT $size ROWS ONLY");
+        " . cola_desde() . $f . " ORDER BY $ord OFFSET $off ROWS FETCH NEXT $size ROWS ONLY");
     $st->execute($p);
     $rows = [];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -328,7 +358,7 @@ function api_cola(): array
         $r['TOTAL'] = $tot !== null ? (float)$tot : null;
         $rows[] = $r;
     }
-    return ['ok' => true, 'total' => $total, 'page' => $page, 'size' => $size, 'rows' => $rows];
+    return ['ok' => true, 'total' => $total, 'page' => $page, 'size' => $size, 'orden' => $oCol, 'dir' => $oDir, 'rows' => $rows];
 }
 
 /* ---------------- Acciones ---------------- */
