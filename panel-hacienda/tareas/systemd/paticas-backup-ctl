@@ -1,34 +1,131 @@
 #!/bin/bash
-# Comando forzado SSH: status|enable|disable del timer, o start del servicio (una corrida, sin cambiar el horario).
+# Comando forzado SSH (via paticas-backup-ssh): timer/servicio del respaldo de inventario y
+# mantenimiento de archivos. Nombres validados: solo inventario_YYYYMMDD_HHMM.bak, sin rutas.
+#   status | enable | disable | start | log
+#   files | download <nombre> | delete <nombre>                       (local: /var/opt/mssql/backup)
+#   espacio | mega-espacio                                          (uso de disco / cuota MEGA)
+#   mega-status | mega-files | mega-download <nombre> | mega-delete <nombre>  (MEGA: /Respaldos/inventario)
 set -euo pipefail
 CMD="${SSH_ORIGINAL_COMMAND:-${1:-}}"
 CMD=$(printf '%s' "$CMD" | tr -d '\r\n')
-case "$CMD" in
+read -r ACC NOMBRE EXTRA <<< "$CMD" || true
+ACC="${ACC:-}"; NOMBRE="${NOMBRE:-}"; EXTRA="${EXTRA:-}"
+DIR=/var/opt/mssql/backup
+MEGA_DIR=/Respaldos/inventario
+MEGA_ENV=/etc/lospaticas/mega.env
+RE='^inventario_[0-9]{8}_[0-9]{4}\.bak$'
+
+[ -z "$EXTRA" ] || { echo "comando no permitido" >&2; exit 2; }
+con_nombre() {
+  [[ "$NOMBRE" =~ $RE ]] || { echo "nombre no permitido" >&2; exit 2; }
+}
+sin_nombre() {
+  [ -z "$NOMBRE" ] || { echo "comando no permitido" >&2; exit 2; }
+}
+respaldo_en_curso() {
+  [ "$(/usr/bin/systemctl show paticas-backup-inventario.service -p ActiveState --value)" = "activating" ]
+}
+
+mega_sesion() {
+  command -v mega-whoami >/dev/null 2>&1 || { echo "NO_CONFIGURADO falta MEGAcmd"; return 1; }
+  [ -r "$MEGA_ENV" ] || { echo "NO_CONFIGURADO faltan credenciales ($MEGA_ENV)"; return 1; }
+  if timeout 60 mega-whoami 2>/dev/null | grep -q 'e-mail'; then return 0; fi
+  # Sesion caida: login con las credenciales del archivo (mismo metodo que paticas-backup-mega). No imprime secretos.
+  (
+    set -a; . "$MEGA_ENV"; set +a
+    [ -n "${MEGA_USER:-}" ] && [ -n "${MEGA_PASS:-}" ] || exit 1
+    TMP=$(mktemp /run/paticas-mega-login.XXXXXX); chmod 600 "$TMP"
+    python3 - "$TMP" << 'PY'
+import os, sys
+q = lambda v: '"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"'
+open(sys.argv[1], "w", encoding="utf-8").write(f"login {q(os.environ['MEGA_USER'])} {q(os.environ['MEGA_PASS'])}\nquit\n")
+PY
+    timeout 120 mega-cmd < "$TMP" >/dev/null 2>&1 || true
+    shred -u "$TMP" 2>/dev/null || rm -f "$TMP"
+  ) || true
+  timeout 60 mega-whoami 2>/dev/null | grep -q 'e-mail' && return 0
+  echo "NO_CONFIGURADO no se pudo iniciar sesion en MEGA"; return 1
+}
+
+case "$ACC" in
   status)
+    sin_nombre
     /usr/bin/systemctl show paticas-backup-inventario.timer --no-pager -p ActiveState -p UnitFileState -p NextElapseUSecRealtime -p LastTriggerUSec
     echo '---SERVICE---'
     /usr/bin/systemctl show paticas-backup-inventario.service --no-pager -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp
     echo '---LOG---'
     tail -n 40 /var/log/paticas-backup-inventario.log 2>/dev/null || true
     ;;
-  enable)
-    /usr/bin/systemctl enable --now paticas-backup-inventario.timer
-    ;;
-  disable)
-    /usr/bin/systemctl disable --now paticas-backup-inventario.timer
-    ;;
+  enable)  sin_nombre; /usr/bin/systemctl enable --now paticas-backup-inventario.timer ;;
+  disable) sin_nombre; /usr/bin/systemctl disable --now paticas-backup-inventario.timer ;;
   start)
-    state=$(/usr/bin/systemctl show paticas-backup-inventario.service -p ActiveState --value)
-    if [ "$state" = "activating" ]; then
-      echo "ya esta en curso" >&2
-      exit 3
-    fi
+    sin_nombre
+    if respaldo_en_curso; then echo "ya esta en curso" >&2; exit 3; fi
     /usr/bin/systemctl start --no-block paticas-backup-inventario.service
     ;;
   log)
+    sin_nombre
     if [ -r /var/log/paticas-backup-inventario.log ]; then
       tail -c 1500000 /var/log/paticas-backup-inventario.log | tr '\r' '\n' | tail -n 4000
     fi
+    ;;
+  files)
+    sin_nombre
+    find "$DIR" -maxdepth 1 -type f -regextype posix-extended -regex '.*/inventario_[0-9]{8}_[0-9]{4}\.bak' -printf '%f\t%s\t%T@\n' | sort
+    ;;
+  download)
+    con_nombre
+    F="$DIR/$NOMBRE"
+    [ -f "$F" ] && [ ! -L "$F" ] || { echo "no existe" >&2; exit 4; }
+    exec /usr/bin/cat -- "$F"
+    ;;
+  delete)
+    con_nombre
+    F="$DIR/$NOMBRE"
+    [ -f "$F" ] && [ ! -L "$F" ] || { echo "no existe" >&2; exit 4; }
+    if respaldo_en_curso; then echo "hay un respaldo en curso; intente cuando termine" >&2; exit 3; fi
+    rm -f -- "$F"
+    echo "$(TZ=America/Costa_Rica date '+%Y-%m-%d %H:%M:%S') mantenimiento: borrado local $NOMBRE (panel)" >> /var/log/paticas-backup-inventario.log
+    echo "borrado $NOMBRE"
+    ;;
+  espacio)
+    sin_nombre
+    df -B1 --output=target,size,used,avail "$DIR" | tail -1 | awk '{print "DISK\t"$1"\t"$2"\t"$3"\t"$4}'
+    find "$DIR" -maxdepth 1 -type f -regextype posix-extended -regex '.*/inventario_[0-9]{8}_[0-9]{4}\.bak' -printf '%s\n' | awk '{n++; s+=$1} END {print "BACKUP\t" n+0 "\t" s+0}'
+    printf 'CARPETA\t%s\n' "$(du -sb "$DIR" | cut -f1)"
+    ;;
+  mega-espacio)
+    sin_nombre
+    mega_sesion >&2 || exit 5
+    timeout 120 mega-df 2>/dev/null | grep -E 'USED STORAGE|file versions' || true
+    ;;
+  mega-status)
+    sin_nombre
+    mega_sesion && echo "OK"
+    ;;
+  mega-files)
+    sin_nombre
+    mega_sesion >&2 || exit 5
+    # FLAGS VERS SIZE DATE(DDMonYYYY) HH:MM:SS NAME
+    timeout 120 mega-ls -l "$MEGA_DIR" 2>/dev/null | while read -r flags vers size d t name extra; do
+      [[ "${name:-}" =~ $RE ]] && [ -z "${extra:-}" ] || continue
+      [[ "$size" =~ ^[0-9]+$ ]] || continue
+      ts=$(TZ=America/Costa_Rica date -d "${d:0:2} ${d:2:3} ${d:5:4} $t" +%s 2>/dev/null || echo 0)
+      printf '%s\t%s\t%s\n' "$name" "$size" "$ts"
+    done | sort
+    ;;
+  mega-download)
+    con_nombre
+    mega_sesion >&2 || exit 5
+    exec mega-cat "$MEGA_DIR/$NOMBRE"
+    ;;
+  mega-delete)
+    con_nombre
+    mega_sesion >&2 || exit 5
+    timeout 120 mega-ls "$MEGA_DIR/$NOMBRE" >/dev/null 2>&1 || { echo "no existe" >&2; exit 4; }
+    timeout 120 mega-rm -f "$MEGA_DIR/$NOMBRE"
+    echo "$(TZ=America/Costa_Rica date '+%Y-%m-%d %H:%M:%S') mantenimiento: borrado MEGA $NOMBRE (panel)" >> /var/log/paticas-backup-inventario.log
+    echo "borrado $NOMBRE"
     ;;
   *)
     echo "comando no permitido" >&2

@@ -88,6 +88,12 @@ $array1 = array_recibe($datos);
 
 
     $to = "hhernandezv@lospaticas.com";
+    // Destinatarios configurables en panel-hacienda (Tareas programadas > Cierre de caja > Configuracion).
+    $__cfg = @json_decode((string)@file_get_contents('/var/lib/lospaticas/panel/caja-destinatarios.json'), true);
+    if (is_array($__cfg) && !empty($__cfg['destinatarios']) && is_array($__cfg['destinatarios'])) {
+        $__ok = array_values(array_filter($__cfg['destinatarios'], function ($e) { return is_string($e) && !preg_match('/[\r\n,;]/', $e) && filter_var($e, FILTER_VALIDATE_EMAIL); }));
+        if ($__ok) $to = implode(', ', $__ok);
+    }
 
     //$fecha1=date("Y-m-d");
 

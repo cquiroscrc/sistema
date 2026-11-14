@@ -1,25 +1,36 @@
 #!/bin/bash
-# Control estrecho de timers de tareas (3 locales en .106 + respaldo en .100).
+# Control estrecho de tareas (3 locales en .106 + respaldo en .100).
 # Uso: paticas-tareas-ctl <caja_correo|mensajeria_update|prefacturas_update|backup_inventario> <enable|disable|start|status|log>
+#      paticas-tareas-ctl backup_inventario <files|mega-status|mega-files|espacio|mega-espacio>
+#      paticas-tareas-ctl backup_inventario <download|delete|mega-download|mega-delete> inventario_YYYYMMDD_HHMM.bak
 # start lanza el servicio una vez (--no-block) y no cambia el timer.
 set -euo pipefail
 ID="${1:-}"
 ACC="${2:-}"
+NOMBRE="${3:-}"
+[ $# -le 3 ] || { echo "demasiados argumentos" >&2; exit 2; }
 case "$ID" in
   caja_correo|mensajeria_update|prefacturas_update|backup_inventario) ;;
   *) echo "unidad invalida" >&2; exit 2 ;;
 esac
 case "$ACC" in
-  enable|disable|start|status|log) ;;
+  enable|disable|start|status|log) [ -z "$NOMBRE" ] || { echo "argumento no permitido" >&2; exit 2; } ;;
+  files|mega-status|mega-files|espacio|mega-espacio)
+    [ "$ID" = backup_inventario ] && [ -z "$NOMBRE" ] || { echo "accion invalida" >&2; exit 2; } ;;
+  download|delete|mega-download|mega-delete)
+    [ "$ID" = backup_inventario ] || { echo "accion invalida" >&2; exit 2; }
+    [[ "$NOMBRE" =~ ^inventario_[0-9]{8}_[0-9]{4}\.bak$ ]] || { echo "nombre no permitido" >&2; exit 2; } ;;
   *) echo "accion invalida" >&2; exit 2 ;;
 esac
 
 if [ "$ID" = "backup_inventario" ]; then
+  REMOTO="$ACC"
+  [ -z "$NOMBRE" ] || REMOTO="$ACC $NOMBRE"
   exec /usr/bin/ssh -F /dev/null -i /etc/lospaticas/ssh/paticas-backup-inventario \
     -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
     -o UserKnownHostsFile=/etc/lospaticas/ssh/known_hosts \
-    -o ConnectTimeout=15 \
-    administrator@172.16.12.100 "$ACC"
+    -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
+    administrator@172.16.12.100 "$REMOTO"
 fi
 
 declare -A UNIT=(

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, Play, Square, Zap, AlertTriangle, ShieldAlert, Maximize2 } from 'lucide-react';
+import { CalendarClock, Play, Square, Zap, AlertTriangle, ShieldAlert, Maximize2, HardDrive, Settings } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Modal, useToast } from '../components/ui';
+import RespaldosModal from '../components/RespaldosModal';
+import CajaConfigModal from '../components/CajaConfigModal';
 
 type Accion = 'enable' | 'disable' | 'start';
 type Tarea = {
@@ -112,6 +114,8 @@ export default function Tareas({ onCambio }: { onCambio?: () => void }) {
   const [palabra, setPalabra] = useState('');
   const [cargando, setCargando] = useState(false);
   const [registro, setRegistro] = useState<Tarea | null>(null);
+  const [archivos, setArchivos] = useState(false);
+  const [configCaja, setConfigCaja] = useState(false);
   const cargar = () => { api('tareas').then(j => { if (j.ok) setItems(j.tareas); else toast('error', j.error); }).catch(() => {}); };
   useEffect(() => { cargar(); }, []);
   useEffect(() => {
@@ -169,6 +173,8 @@ export default function Tareas({ onCambio }: { onCambio?: () => void }) {
               <Button variant="outline" disabled={t.corriendo} onClick={() => { setPalabra(''); setModal({ id: t.id, acc: 'start', nombre: t.nombre }); }}><Zap className="h-4 w-4" />{t.corriendo ? 'En curso' : 'Ejecutar ahora'}</Button>
               <Button variant="success" disabled={activo} onClick={() => { setPalabra(''); setModal({ id: t.id, acc: 'enable', nombre: t.nombre }); }}><Play className="h-4 w-4" />Activar</Button>
               <Button variant="danger" disabled={!activo} onClick={() => { setPalabra(''); setModal({ id: t.id, acc: 'disable', nombre: t.nombre }); }}><Square className="h-4 w-4" />Desactivar</Button>
+              {t.id === 'backup_inventario' && <Button variant="outline" onClick={() => setArchivos(true)}><HardDrive className="h-4 w-4" />Archivos de respaldo</Button>}
+              {t.id === 'caja_correo' && <Button variant="outline" onClick={() => setConfigCaja(true)}><Settings className="h-4 w-4" />Configuración</Button>}
             </div>
             <div className="mt-4">
               <div className="flex items-center justify-between gap-3">
@@ -209,6 +215,8 @@ export default function Tareas({ onCambio }: { onCambio?: () => void }) {
             <div><label className="mb-1 block text-xs font-medium">Escriba <b>DESACTIVAR</b> para confirmar</label><Input value={palabra} onChange={e => setPalabra(e.target.value)} autoFocus placeholder="DESACTIVAR" /></div>
           </div>}
     </Modal>
+    <RespaldosModal open={archivos} onClose={() => setArchivos(false)} />
+    <CajaConfigModal open={configCaja} onClose={() => setConfigCaja(false)} />
     <RegistroModal tarea={registro ? (items?.find(t => t.id === registro.id) ?? registro) : null} onClose={() => setRegistro(null)} />
   </div>;
 }

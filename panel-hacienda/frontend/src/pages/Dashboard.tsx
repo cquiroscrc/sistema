@@ -5,6 +5,7 @@ import { api, type DocRow, type Status } from '../lib/api';
 import { cn, fmtMonto, fmtNum } from '../lib/utils';
 import { Card, CardBody, CardHeader, CardTitle, EstadoBadge, Empty, Spinner, Tabs, Switch } from '../components/ui';
 import type { Vista } from '../App';
+import Espacio from '../components/Espacio';
 
 function Kpi({ titulo, valor, sub, icon: Icon, tono }: { titulo: string; valor: React.ReactNode; sub?: React.ReactNode; icon: any; tono: 'primary' | 'danger' | 'warning' | 'success' | 'muted' }) {
   const t = { primary: 'bg-primary/10 text-primary', danger: 'bg-danger/10 text-danger', warning: 'bg-warning/15 text-warning', success: 'bg-success/10 text-success', muted: 'bg-muted text-muted-foreground' }[tono];
@@ -95,6 +96,7 @@ export default function Dashboard({ status, ir, onStatus }: { status: Status | n
           </div>)}</div>
       </Card>
     </div>
+    <Espacio />
     <div className="grid gap-4 md:grid-cols-3">
       <Card className="p-4 text-sm"><div className="flex items-center gap-2 text-muted-foreground"><Clock className="h-4 w-4" />Última bitácora</div><div className="mt-1 font-medium tabular-nums">{status?.ultima_bitacora || '—'}</div></Card>
       <Card className="p-4 text-sm"><div className="flex items-center gap-2 text-muted-foreground"><CheckCircle2 className="h-4 w-4" />Último comprobante</div><div className="mt-1 font-medium tabular-nums">{status?.ultimo_documento || '—'}</div></Card>

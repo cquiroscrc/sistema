@@ -43,6 +43,11 @@ try {
         case 'tareas':   ph_json(api_tareas());
         case 'tarea_log': ph_json(api_tarea_log());
         case 'tarea':    ph_require_post(); ph_json(api_tarea());
+        case 'respaldos':       ph_json(api_respaldos());
+        case 'respaldo_borrar': ph_require_post(); ph_json(api_respaldo_borrar());
+        case 'espacio':         ph_json(api_espacio());
+        case 'caja_config':     ph_json(api_caja_config());
+        case 'caja_config_guardar': ph_require_post(); ph_json(api_caja_config_guardar());
         default:         ph_json(['ok' => false, 'error' => 'Accion desconocida'], 400);
     }
 } catch (Throwable $e) {
