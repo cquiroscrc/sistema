@@ -1,0 +1,11 @@
+[Unit]
+Description=Los Paticas - actividades comerciales cada 5 minutos (Costa Rica). Oneshot con flock -n: si la corrida anterior sigue, se omite.
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=false
+AccuracySec=30s
+Unit=paticas-actividades-comerciales.service
+
+[Install]
+WantedBy=timers.target

@@ -1,7 +1,8 @@
 #!/bin/bash
 # Control estrecho de tareas (3 locales en .106 + respaldo en .100).
-# Uso: paticas-tareas-ctl <caja_correo|mensajeria_update|prefacturas_update|backup_inventario> <enable|disable|start|status|log>
-#      paticas-tareas-ctl backup_inventario <files|mega-status|mega-files|espacio|mega-espacio>
+# Uso: paticas-tareas-ctl <caja_correo|mensajeria_update|prefacturas_update|actividades_comerciales|backup_inventario> <enable|disable|start|status|log>
+#      paticas-tareas-ctl backup_inventario <files|mega-status|mega-files|espacio|mega-espacio|retencion>
+#      paticas-tareas-ctl backup_inventario retencion-set <dias_local>:<dias_mega>   (enteros 1-365, lo valida tambien .100)
 #      paticas-tareas-ctl backup_inventario <download|delete|mega-download|mega-delete> inventario_YYYYMMDD_HHMM.bak
 # start lanza el servicio una vez (--no-block) y no cambia el timer.
 set -euo pipefail
@@ -10,13 +11,16 @@ ACC="${2:-}"
 NOMBRE="${3:-}"
 [ $# -le 3 ] || { echo "demasiados argumentos" >&2; exit 2; }
 case "$ID" in
-  caja_correo|mensajeria_update|prefacturas_update|backup_inventario) ;;
+  caja_correo|mensajeria_update|prefacturas_update|actividades_comerciales|backup_inventario) ;;
   *) echo "unidad invalida" >&2; exit 2 ;;
 esac
 case "$ACC" in
   enable|disable|start|status|log) [ -z "$NOMBRE" ] || { echo "argumento no permitido" >&2; exit 2; } ;;
-  files|mega-status|mega-files|espacio|mega-espacio)
+  files|mega-status|mega-files|espacio|mega-espacio|retencion)
     [ "$ID" = backup_inventario ] && [ -z "$NOMBRE" ] || { echo "accion invalida" >&2; exit 2; } ;;
+  retencion-set)
+    [ "$ID" = backup_inventario ] || { echo "accion invalida" >&2; exit 2; }
+    [[ "$NOMBRE" =~ ^[0-9]{1,3}:[0-9]{1,3}$ ]] || { echo "valor no permitido" >&2; exit 2; } ;;
   download|delete|mega-download|mega-delete)
     [ "$ID" = backup_inventario ] || { echo "accion invalida" >&2; exit 2; }
     [[ "$NOMBRE" =~ ^inventario_[0-9]{8}_[0-9]{4}\.bak$ ]] || { echo "nombre no permitido" >&2; exit 2; } ;;
@@ -37,6 +41,7 @@ declare -A UNIT=(
   [caja_correo]=paticas-caja-correo
   [mensajeria_update]=paticas-mensajeria-update
   [prefacturas_update]=paticas-prefacturas-update
+  [actividades_comerciales]=paticas-actividades-comerciales
 )
 U="${UNIT[$ID]}"
 case "$ACC" in

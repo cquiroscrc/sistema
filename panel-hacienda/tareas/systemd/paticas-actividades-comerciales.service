@@ -1,0 +1,20 @@
+[Unit]
+Description=Los Paticas - actualizacion de actividades comerciales Hacienda (ActualizadorActividadComercial.php)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+UMask=0027
+WorkingDirectory=/var/www/lospaticas/web_paticas_v2/FacturaElectronica/Utils
+Environment=TZ=America/Costa_Rica
+RuntimeDirectory=paticas-actividades-comerciales
+ExecStart=/usr/bin/flock -n /run/paticas-actividades-comerciales/run.lock /usr/bin/php8.5 -d memory_limit=512M -d max_execution_time=0 /var/www/lospaticas/web_paticas_v2/FacturaElectronica/Utils/ActualizadorActividadComercial.php
+StandardOutput=append:/var/log/lospaticas/actividades-comerciales.log
+StandardError=append:/var/log/lospaticas/actividades-comerciales.log
+TimeoutStartSec=4min
+Nice=5
+NoNewPrivileges=yes
+PrivateTmp=yes

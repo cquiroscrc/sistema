@@ -8,6 +8,7 @@ function ph_tareas_defs(): array
         ['id' => 'caja_correo', 'nombre' => 'Cierre de caja (correo)', 'descripcion' => 'utilitarios/caja_correo.php · lee hfacturas/cxc/egresos/bancos y redirige a cierres.php para enviar el correo', 'hora' => '17:15', 'servidor' => 'pat-php-app01 (.106)'],
         ['id' => 'mensajeria_update', 'nombre' => 'Actualizar mensajería', 'descripcion' => 'utilitarios/mensajeria_update.php · restablece existencias de códigos 9SM, 9ENCOMIENDA, 9IMPRESIONZL, 9SERVDIGITALZL y 9TM', 'hora' => '17:28', 'servidor' => 'pat-php-app01 (.106)'],
         ['id' => 'prefacturas_update', 'nombre' => 'Limpiar prefacturas', 'descripcion' => 'utilitarios/prefacturas_update.php · DELETE de hprefacturas, hpregeneral y tmp_devol', 'hora' => '17:48', 'servidor' => 'pat-php-app01 (.106)'],
+        ['id' => 'actividades_comerciales', 'nombre' => 'Actividades comerciales', 'descripcion' => 'web_paticas_v2/FacturaElectronica/Utils/ActualizadorActividadComercial.php · actualiza las actividades comerciales desde Hacienda (flock: si la corrida anterior sigue, se omite; tope 4 min)', 'hora' => 'cada 5 min', 'servidor' => 'pat-php-app01 (.106)'],
         ['id' => 'backup_inventario', 'nombre' => 'Respaldo BD inventario', 'descripcion' => 'BACKUP DATABASE inventario WITH COMPRESSION, CHECKSUM + RESTORE VERIFYONLY (retención 14 días)', 'hora' => '18:00', 'servidor' => 'pat-sql-web01 (.100)'],
     ];
 }
@@ -123,6 +124,7 @@ function api_tarea_log(): array
         'caja_correo' => '/var/log/lospaticas/caja-correo.log',
         'mensajeria_update' => '/var/log/lospaticas/mensajeria-update.log',
         'prefacturas_update' => '/var/log/lospaticas/prefacturas-update.log',
+        'actividades_comerciales' => '/var/log/lospaticas/actividades-comerciales.log',
     ];
     if (isset($locales[$id])) {
         [$lineas, $truncado] = ph_log_archivo($locales[$id]);
