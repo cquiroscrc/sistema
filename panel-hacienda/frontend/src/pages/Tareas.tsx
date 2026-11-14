@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import { CalendarClock, Play, Square, Zap, AlertTriangle, HardDrive, Settings, Send, Info } from 'lucide-react';
+import { CalendarClock, Play, Square, Zap, AlertTriangle, HardDrive, Settings, Send, Info, Receipt, MessageSquare, Eraser, Briefcase, Database, type LucideIcon } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import { Button, Card, CardBody, Input, Modal, useToast } from '../components/ui';
@@ -16,6 +16,8 @@ type Tarea = {
 
 const PALABRA: Record<Accion, string> = { enable: 'ACTIVAR', disable: 'DESACTIVAR', start: 'EJECUTAR' };
 const CLAVE_TAB = 'panel.tareas.tab';
+const ICONO: Record<string, LucideIcon> = { caja_correo: Receipt, mensajeria_update: MessageSquare, prefacturas_update: Eraser, actividades_comerciales: Briefcase, backup_inventario: Database };
+const iconoDe = (id: string): LucideIcon => ICONO[id] ?? CalendarClock;
 
 function filtrarLog(lineas: string[], fecha: string, consulta: string): string[] {
   let bloque = '';
@@ -130,9 +132,9 @@ function InfoTip({ texto }: { texto: React.ReactNode }) {
 const estadoTexto = (t: Tarea) => (t.corriendo ? 'EN CURSO' : t.enabled ? 'HABILITADA' : 'DESHABILITADA');
 const estadoClase = (t: Tarea) => (t.corriendo ? 'bg-info/10 text-info ring-info/30' : t.enabled ? 'bg-success/10 text-success ring-success/30' : 'bg-muted text-muted-foreground ring-border');
 
-function Insignia({ t, chica }: { t: Tarea; chica?: boolean }) {
-  return <span className={cn('inline-flex items-center gap-1.5 rounded-full font-semibold ring-1 ring-inset', chica ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-xs', estadoClase(t))}>
-    <span className={cn('rounded-full', chica ? 'h-1.5 w-1.5' : 'h-2 w-2', t.corriendo || t.enabled ? 'bg-current animate-pulse' : 'bg-muted-foreground')} />{estadoTexto(t)}</span>;
+function Insignia({ t }: { t: Tarea }) {
+  return <span className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset', estadoClase(t))}>
+    <span className={cn('h-2 w-2 rounded-full', t.corriendo || t.enabled ? 'bg-current animate-pulse' : 'bg-muted-foreground')} />{estadoTexto(t)}</span>;
 }
 
 export default function Tareas({ onCambio }: { onCambio?: () => void }) {
@@ -170,13 +172,13 @@ export default function Tareas({ onCambio }: { onCambio?: () => void }) {
       {(items ?? []).map(x => <button key={x.id} role="tab" type="button" aria-selected={t?.id === x.id} onClick={() => elegir(x.id)}
         className={cn('inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           t?.id === x.id ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
-        {x.nombre}<Insignia t={x} chica /></button>)}
+        {(() => { const I = iconoDe(x.id); return <I className="h-4 w-4 shrink-0" aria-hidden="true" />; })()}{x.nombre}</button>)}
       {!items && <span className="px-3 py-2 text-sm text-muted-foreground">Cargando tareas…</span>}
     </div>
     {t && <Card className="flex min-h-0 flex-1 flex-col">
       <CardBody className="flex min-h-0 flex-1 flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-base font-semibold"><CalendarClock className="h-4 w-4 text-primary" />{t.nombre}
+          <h2 className="flex items-center gap-2 text-base font-semibold">{(() => { const I = iconoDe(t.id); return <I className="h-4 w-4 text-primary" aria-hidden="true" />; })()}{t.nombre}
             <InfoTip texto={<><div>{t.descripcion}</div><div className="mt-1 text-muted-foreground">{t.hora} · {t.servidor}</div></>} /></h2>
           <Insignia t={t} />
         </div>
