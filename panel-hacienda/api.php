@@ -5,6 +5,7 @@ require __DIR__ . '/lib.php';
 require_once __DIR__ . '/buzon/buzon-lib.php';
 require_once __DIR__ . '/db/migrar-lib.php';
 require_once __DIR__ . '/tareas/tareas-lib.php';
+require_once __DIR__ . '/tareas/retencion-lib.php';
 require_once __DIR__ . '/correo/correo-lib.php';
 require_once __DIR__ . '/correo/api-correo.php';
 $a = $_GET['a'] ?? '';
@@ -49,6 +50,8 @@ try {
         case 'config_correo_guardar': ph_require_post(); ph_json(api_config_correo_guardar());
         case 'config_correo_probar':  ph_require_post(); ph_json(api_config_correo_probar());
         case 'respaldos':       ph_json(api_respaldos());
+        case 'config_respaldos':         ph_json(api_config_respaldos());
+        case 'config_respaldos_guardar': ph_require_post(); ph_json(api_config_respaldos_guardar());
         case 'respaldo_borrar': ph_require_post(); ph_json(api_respaldo_borrar());
         case 'espacio':         ph_json(api_espacio());
         case 'caja_config':     ph_json(api_caja_config());
@@ -267,11 +270,10 @@ function api_doc(): array
 }
 
 /* ---------------- Cola de envio (misma consulta que ProcesarPendientesEnvio, solo lectura) ---------------- */
-function cola_sql(string $top): string
+function cola_desde(): string
 {
     // Misma logica que ProcesarPendientesEnvio (admin.php); NIT y FECHA_NORMATIVA se leen como subconsulta
-    return "SELECT $top V.TIPO_DOCUMENTO, RTRIM(V.DOCUMENTO) AS DOCUMENTO, RTRIM(V.NIT) NIT, CONVERT(varchar(19), V.FECHA, 120) FECHA, RTRIM(p.ESTADO) ESTADO
-        FROM V_DOCUMENTO_ELECTRONICO v LEFT JOIN DOC_ELECTRONICO_PROCESADO p ON v.DOCUMENTO = p.NUMERO_DOC
+    return "FROM V_DOCUMENTO_ELECTRONICO v LEFT JOIN DOC_ELECTRONICO_PROCESADO p ON v.DOCUMENTO = p.NUMERO_DOC
         WHERE v.ACEPTA_DOC_ELECTRONICO = 'S' AND V.TIPO_DOCUMENTO IN ('FE','NC','ND','TE')
         AND v.NIT NOT IN (SELECT RTRIM(NIT) FROM dbo.[COMPAÑIAS] WHERE CONFIGURADA = 'SI')
         AND NOT v.SAT IS NULL AND v.FECHA >= (SELECT TOP 1 FECHA_NORMATIVA FROM dbo.[COMPAÑIAS] WHERE CONFIGURADA = 'SI')
@@ -280,10 +282,53 @@ function cola_sql(string $top): string
         AND (p.ESTADO IS NULL OR p.ESTADO NOT IN ('rechazado', 'error'))";
 }
 
+function cola_sql(string $top): string
+{
+    return "SELECT $top V.TIPO_DOCUMENTO, RTRIM(V.DOCUMENTO) AS DOCUMENTO, RTRIM(V.NIT) NIT, CONVERT(varchar(19), V.FECHA, 120) FECHA, RTRIM(p.ESTADO) ESTADO
+        " . cola_desde();
+}
+
+/** Filtros de la cola (lado servidor): tipo, estado previo, fechas y texto (documento, clave, consecutivo, cedula, cliente, correo). */
+function cola_filtros(array &$p): string
+{
+    $w = [];
+    if (in_array($_GET['tipo'] ?? '', ['FE', 'NC', 'ND', 'TE'], true)) { $w[] = 'v.TIPO_DOCUMENTO = ?'; $p[] = $_GET['tipo']; }
+    switch ($_GET['estado'] ?? '') {
+        case 'nuevo': $w[] = "(p.ESTADO IS NULL OR RTRIM(p.ESTADO) = '')"; break;
+        case 'reintentar': $w[] = "p.ESTADO = 'reintentar'"; break;
+        case 'procesando': $w[] = "p.ESTADO = 'procesando'"; break;
+        case 'otro': $w[] = "RTRIM(p.ESTADO) NOT IN ('', 'reintentar', 'procesando')"; break;
+    }
+    if ($d = ph_date($_GET['desde'] ?? null)) { $w[] = 'v.FECHA >= CONVERT(datetime, ?, 121)'; $p[] = $d; }
+    if ($h = ph_date($_GET['hasta'] ?? null)) { $w[] = 'v.FECHA <= CONVERT(datetime, ?, 121)'; $p[] = strlen($h) === 10 ? "$h 23:59:59" : $h; }
+    $q = trim(mb_substr((string)($_GET['q'] ?? ''), 0, 60));
+    if ($q !== '') {
+        $w[] = '(v.DOCUMENTO LIKE ? OR v.SAT LIKE ? OR v.CLAVE LIKE ? OR v.NIT LIKE ? OR v.CLIENTE LIKE ? OR v.CORREO LIKE ?)';
+        array_push($p, "%$q%", "%$q%", "%$q%", "%$q%", "%$q%", "%$q%");
+    }
+    return $w ? ' AND ' . implode(' AND ', $w) : '';
+}
+
 function api_cola(): array
 {
-    $rows = ph_db()->query(cola_sql('TOP 500') . ' ORDER BY v.FECHA ASC')->fetchAll(PDO::FETCH_ASSOC);
-    return ['ok' => true, 'rows' => array_map(fn($r) => array_map(fn($v) => ph_utf8((string)$v), $r), $rows)];
+    $p = [];
+    $f = cola_filtros($p);
+    $page = max(1, (int)($_GET['page'] ?? 1)); $size = max(10, min(200, (int)($_GET['size'] ?? 25)));
+    $off = ($page - 1) * $size;
+    $db = ph_db();
+    $st = $db->prepare('SELECT COUNT(*) ' . cola_desde() . $f); $st->execute($p); $total = (int)$st->fetchColumn();
+    $st = $db->prepare("SELECT RTRIM(v.TIPO_DOCUMENTO) TIPO_DOCUMENTO, RTRIM(v.DOCUMENTO) DOCUMENTO, RTRIM(v.NIT) NIT, RTRIM(v.CLIENTE) CLIENTE, RTRIM(v.CORREO) CORREO,
+        v.TOTALFACTURA, RTRIM(v.SAT) SAT, RTRIM(v.CLAVE) CLAVE, CONVERT(varchar(19), v.FECHA, 120) FECHA, RTRIM(p.ESTADO) ESTADO
+        " . cola_desde() . $f . " ORDER BY v.FECHA ASC, v.DOCUMENTO OFFSET $off ROWS FETCH NEXT $size ROWS ONLY");
+    $st->execute($p);
+    $rows = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $tot = $r['TOTALFACTURA']; unset($r['TOTALFACTURA']);
+        $r = array_map(fn($v) => ph_utf8((string)$v), $r);
+        $r['TOTAL'] = $tot !== null ? (float)$tot : null;
+        $rows[] = $r;
+    }
+    return ['ok' => true, 'total' => $total, 'page' => $page, 'size' => $size, 'rows' => $rows];
 }
 
 /* ---------------- Acciones ---------------- */

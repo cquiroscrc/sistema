@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Mail, Save, PlugZap, KeyRound } from 'lucide-react';
+import { Mail, Save, PlugZap, KeyRound, HardDrive, FolderSync } from 'lucide-react';
+import RutasDEData from './RutasDEData';
 import { api } from '../lib/api';
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Label, Select, Tabs, Spinner, useToast } from '../components/ui';
 
-type Pestana = 'correo';
+export type Pestana = 'correo' | 'respaldos' | 'rutas';
 type Smtp = { host: string; puerto: number; cifrado: 'starttls' | 'ssl' | 'ninguno'; usuario: string; remitente: string; remitente_nombre: string; password_guardada: boolean; configurado: boolean; actualizado?: string | null; actualizado_por?: string | null };
 const PUERTO: Record<Smtp['cifrado'], number> = { starttls: 587, ssl: 465, ninguno: 25 };
 
@@ -62,10 +63,56 @@ function Correo() {
   </Card>;
 }
 
-export default function Configuracion() {
-  const [tab, setTab] = useState<Pestana>('correo');
+function Respaldos() {
+  const toast = useToast();
+  const [d, setD] = useState<{ local: number; mega: number; actualizado?: string | null } | null>(null);
+  const [err, setErr] = useState('');
+  const [local, setLocal] = useState('');
+  const [mega, setMega] = useState('');
+  const [guardando, setGuardando] = useState(false);
+  const cargar = () => api('config_respaldos').then(j => {
+    if (j.ok) { setD(j); setLocal(String(j.local)); setMega(String(j.mega)); setErr(''); } else setErr(j.error);
+  }).catch(() => {});
+  useEffect(() => { cargar(); }, []);
+  const ok = (v: string) => /^\d{1,3}$/.test(v) && +v >= 1 && +v <= 365;
+  const guardar = async () => {
+    setGuardando(true);
+    try {
+      const j = await api('config_respaldos_guardar', {}, { local, mega });
+      if (j.ok) { setD(j); setLocal(String(j.local)); setMega(String(j.mega)); toast('ok', j.mensaje || 'Guardado'); } else toast('error', j.error);
+    } finally { setGuardando(false); }
+  };
+  if (err) return <Card><CardBody><p className="text-sm text-danger">{err}</p><Button className="mt-3" variant="outline" onClick={cargar}>Reintentar</Button></CardBody></Card>;
+  if (!d) return <div className="flex h-40 items-center justify-center"><Spinner /></div>;
+  const cambio = String(d.local) !== local || String(d.mega) !== mega;
+  return <Card>
+    <CardHeader><CardTitle className="flex items-center gap-2"><HardDrive className="h-4 w-4 text-primary" />Retención de respaldos de inventario</CardTitle>
+      <span className="text-xs text-muted-foreground">{d.actualizado ? `Modificado ${d.actualizado}` : 'Valores por defecto'}</span></CardHeader>
+    <CardBody>
+      <form onSubmit={e => { e.preventDefault(); guardar(); }} className="grid gap-4 md:grid-cols-6">
+        <div className="md:col-span-3"><Label htmlFor="rl">Días a mantener en local (pat-sql-web01)</Label>
+          <Input id="rl" type="number" min={1} max={365} step={1} value={local} onChange={e => setLocal(e.target.value)} required />
+          <p className="mt-1 text-xs text-muted-foreground">Carpeta /var/opt/mssql/backup. Actual: {d.local} días.</p></div>
+        <div className="md:col-span-3"><Label htmlFor="rm">Días a mantener en MEGA</Label>
+          <Input id="rm" type="number" min={1} max={365} step={1} value={mega} onChange={e => setMega(e.target.value)} required />
+          <p className="mt-1 text-xs text-muted-foreground">Carpeta /Respaldos/inventario. Actual: {d.mega} días.</p></div>
+        {(!ok(local) || !ok(mega)) && <p className="text-xs text-danger md:col-span-6">Use números enteros entre 1 y 365.</p>}
+        <div className="md:col-span-6"><Button type="submit" loading={guardando} disabled={!cambio || !ok(local) || !ok(mega)}><Save className="h-4 w-4" />Guardar</Button></div>
+      </form>
+      <p className="mt-4 text-xs text-muted-foreground">Guardar no borra nada. La limpieza se aplica en la próxima corrida del respaldo (18:00) y solo afecta archivos <code>inventario_AAAAMMDD_HHMM.bak</code>; nunca <code>inventario.bak</code> ni otros archivos.</p>
+    </CardBody>
+  </Card>;
+}
+
+export default function Configuracion({ tab, onTab }: { tab: Pestana; onTab: (t: Pestana) => void }) {
   return <div className="space-y-4">
-    <Tabs value={tab} onChange={setTab} items={[{ id: 'correo', label: <span className="inline-flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />Correo</span> }]} />
+    <Tabs value={tab} onChange={onTab} items={[
+      { id: 'correo', label: <span className="inline-flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />Correo</span> },
+      { id: 'respaldos', label: <span className="inline-flex items-center gap-1.5"><HardDrive className="h-3.5 w-3.5" />Respaldos</span> },
+      { id: 'rutas', label: <span className="inline-flex items-center gap-1.5"><FolderSync className="h-3.5 w-3.5" />Rutas</span> },
+    ]} />
     {tab === 'correo' && <Correo />}
+    {tab === 'respaldos' && <Respaldos />}
+    {tab === 'rutas' && <RutasDEData />}
   </div>;
 }
