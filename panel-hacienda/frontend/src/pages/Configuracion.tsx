@@ -108,14 +108,14 @@ function Respaldos() {
 function BitacoraRetencion() {
   const toast = useToast();
   const [d, setD] = useState<{ debug_dias: number; otros_dias: number; debug_viejos?: number; otros_viejos?: number; mensaje?: string } | null>(null);
-  const [debug, setDebug] = useState('7');
-  const [otros, setOtros] = useState('90');
+  const [debug, setDebug] = useState('1825');
+  const [otros, setOtros] = useState('1825');
   const [guardando, setGuardando] = useState(false);
   const cargar = () => api('config_bitacora').then(j => {
     if (j.ok) { setD(j); setDebug(String(j.debug_dias)); setOtros(String(j.otros_dias)); } else toast('error', j.error);
   }).catch(() => {});
   useEffect(() => { cargar(); }, []);
-  const ok = (v: string) => /^\d{1,4}$/.test(v) && +v >= 1 && +v <= 3650;
+  const ok = (v: string) => /^\d{1,4}$/.test(v) && +v >= 1825 && +v <= 3650;
   const guardar = async () => {
     setGuardando(true);
     try {
@@ -130,14 +130,14 @@ function BitacoraRetencion() {
     <CardBody>
       <form onSubmit={e => { e.preventDefault(); guardar(); }} className="grid gap-4 md:grid-cols-6">
         <div className="md:col-span-3"><Label htmlFor="bd">Días a mantener de DEBUG</Label>
-          <Input id="bd" type="number" min={1} max={3650} value={debug} onChange={e => setDebug(e.target.value)} required />
-          <p className="mt-1 text-xs text-muted-foreground">Sugerido: 7. Con el valor actual habría {d.debug_viejos ?? '…'} filas DEBUG para borrar.</p></div>
+          <Input id="bd" type="number" min={1825} max={3650} value={debug} onChange={e => setDebug(e.target.value)} required />
+          <p className="mt-1 text-xs text-muted-foreground">Mínimo legal: 5 años (1825 días). Con el valor actual habría {d.debug_viejos ?? '…'} filas DEBUG para mover al histórico.</p></div>
         <div className="md:col-span-3"><Label htmlFor="bo">Días a mantener del resto (INFO, avisos y errores)</Label>
-          <Input id="bo" type="number" min={1} max={3650} value={otros} onChange={e => setOtros(e.target.value)} required />
-          <p className="mt-1 text-xs text-muted-foreground">Sugerido: 90. Con el valor actual habría {d.otros_viejos ?? '…'} filas para borrar.</p></div>
+          <Input id="bo" type="number" min={1825} max={3650} value={otros} onChange={e => setOtros(e.target.value)} required />
+          <p className="mt-1 text-xs text-muted-foreground">Mínimo legal: 5 años (1825 días). Con el valor actual habría {d.otros_viejos ?? '…'} filas para mover al histórico.</p></div>
         <div className="md:col-span-6"><Button type="submit" loading={guardando} disabled={!ok(debug) || !ok(otros)}><Save className="h-4 w-4" />Guardar</Button></div>
       </form>
-      <p className="mt-4 text-xs text-muted-foreground">{d.mensaje || 'Guardar no borra nada. El temporizador de limpieza está deshabilitado; las filas de antes de 2026 ya están en la tabla histórica y esta retención no las toca.'}</p>
+      <p className="mt-4 text-xs text-muted-foreground">{d.mensaje || 'Guardar no mueve ni borra nada. Al cumplirse el plazo (mínimo 5 años, 1825 días, el mismo que los documentos) las filas de BITACORA se mueven al histórico, que no se depura. El temporizador sigue deshabilitado. No se tocan las tablas de documentos.'}</p>
     </CardBody>
   </Card>;
 }

@@ -1,11 +1,11 @@
 <?php
 declare(strict_types=1);
-/* Retención de BITACORA (no toca BITACORA_HIST). Guardar no borra nada. */
+/* Retención de BITACORA: las filas que cumplen el plazo se MUEVEN a BITACORA_HIST (copia+borrado verificado). Nunca se depura el histórico ni se tocan tablas de documentos. Por ley, mínimo 5 años. Guardar no mueve nada. */
 const PH_BITACORA_RETENCION = '/var/lib/lospaticas/panel/bitacora-retencion.conf';
 
 function ph_bitacora_retencion_leer(): array
 {
-    $d = 7; $o = 90;
+    $d = 1825; $o = 1825;
     if (is_readable(PH_BITACORA_RETENCION)) {
         foreach (file(PH_BITACORA_RETENCION, FILE_IGNORE_NEW_LINES) ?: [] as $l) {
             if (preg_match('/^DEBUG_DIAS=(\d{1,4})\s*$/', $l, $m)) $d = (int)$m[1];
@@ -36,7 +36,7 @@ function api_config_bitacora(): array
         $c['debug_viejos'] = (int)($r['debug_viejos'] ?? 0);
         $c['otros_viejos'] = (int)($r['otros_viejos'] ?? 0);
         $c['total'] = (int)($r['total'] ?? 0);
-        $c['mensaje'] = 'Con estos valores se borrarían ' . number_format($c['debug_viejos'] + $c['otros_viejos']) . ' filas de BITACORA (DEBUG con más de ' . $d . ' días + el resto con más de ' . $o . ' días). El histórico no se toca. El temporizador está deshabilitado; no se borra nada hasta que lo actives.';
+        $c['mensaje'] = 'Con estos valores se moverían ' . number_format($c['debug_viejos'] + $c['otros_viejos']) . ' filas de BITACORA al histórico (DEBUG con más de ' . $d . ' días + el resto con más de ' . $o . ' días). No se eliminan: pasan a BITACORA_HIST, que no se depura. El temporizador está deshabilitado; no se mueve nada. Esta retención no toca las tablas de documentos.';
     } catch (Throwable $e) {
         $c['error'] = $e->getMessage();
     }
@@ -45,14 +45,14 @@ function api_config_bitacora(): array
 
 function api_config_bitacora_guardar(): array
 {
-    $d = ph_bitacora_retencion_validar((string)($_POST['debug_dias'] ?? ''), 1, 3650);
-    $o = ph_bitacora_retencion_validar((string)($_POST['otros_dias'] ?? ''), 1, 3650);
-    if ($d === null || $o === null) return ['ok' => false, 'error' => 'Los días deben ser números enteros (DEBUG 1-3650, resto 1-3650)'];
+    $d = ph_bitacora_retencion_validar((string)($_POST['debug_dias'] ?? ''), 1825, 3650);
+    $o = ph_bitacora_retencion_validar((string)($_POST['otros_dias'] ?? ''), 1825, 3650);
+    if ($d === null || $o === null) return ['ok' => false, 'error' => 'Los días deben ser al menos 5 años (1825 días) y como máximo 10 años (3650)'];
     $txt = "DEBUG_DIAS=$d\nOTROS_DIAS=$o\nACTUALIZADO=" . time() . "\n";
     if (@file_put_contents(PH_BITACORA_RETENCION, $txt, LOCK_EX) === false) {
         return ['ok' => false, 'error' => 'No se pudo guardar la configuración'];
     }
     @chmod(PH_BITACORA_RETENCION, 0640);
-    ph_accion("configuracion: retención de bitácora DEBUG $d días, resto $o días (no se borró nada; el temporizador sigue deshabilitado)");
+    ph_accion("configuracion: retención de bitácora DEBUG $d días, resto $o días (se movería a HIST; no se movió nada; el temporizador sigue deshabilitado)");
     return api_config_bitacora() + ['ok' => true];
 }
