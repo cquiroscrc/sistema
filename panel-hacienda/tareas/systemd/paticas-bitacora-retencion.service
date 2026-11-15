@@ -1,0 +1,17 @@
+[Unit]
+Description=Los Paticas - retención de BITACORA (lotes; no toca HIST)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+UMask=0027
+StandardOutput=append:/var/log/lospaticas/bitacora-retencion.log
+StandardError=append:/var/log/lospaticas/bitacora-retencion.log
+ExecStart=/usr/bin/php8.5 /var/www/lospaticas/sistema/panel-hacienda/tareas/bitacora-retencion.php --ejecutar
+TimeoutStartSec=2h
+Nice=10
+NoNewPrivileges=yes
+PrivateTmp=yes

@@ -1,0 +1,10 @@
+[Unit]
+Description=Los Paticas - retención diaria de BITACORA a las 02:20 Costa Rica
+
+[Timer]
+OnCalendar=*-*-* 02:20:00 America/Costa_Rica
+Persistent=false
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
