@@ -35,7 +35,7 @@ function api_tareas(): array
         $lines = []; $rc = 0;
         exec('/usr/bin/sudo -n /usr/local/sbin/paticas-tareas-ctl ' . escapeshellarg($d['id']) . ' status 2>&1', $lines, $rc);
         [$timer, $svc, $log] = ph_tareas_parse(implode("\n", $lines));
-        if ($d['id'] === 'caja_correo') $log = ph_log_sin_html($log);
+        if (in_array($d['id'], PH_TAREAS_HTML, true)) $log = ph_log_sin_html($log);
         $enabled = (($timer['UnitFileState'] ?? '') === 'enabled');
         $item = $d + [
             'enabled' => $enabled,
@@ -97,13 +97,25 @@ function ph_log_normalizar(string $texto): array
     return [$limpio, $truncado];
 }
 
-/** Quita etiquetas HTML y descarta lineas que quedan vacias (salida antigua de caja_correo.php). */
+/** Texto limpio de la salida HTML de los utilitarios (misma logica que /usr/local/sbin/paticas-solo-texto):
+ *  sin <script>, <br> y cierres de bloque como saltos de linea, sin etiquetas, sin lineas vacias. */
 function ph_log_sin_html(array $lineas): array
 {
+    $t = implode("\n", array_map('strval', $lineas));
+    $t = preg_replace('/<!--.*?-->/s', '', $t);
+    $t = preg_replace('#<script\b.*?</script\s*>#is', "\n", $t);
+    $t = preg_replace('#\A.*</script\s*>#is', '', $t);
+    $t = preg_replace('#<script\b.*\z#is', '', $t);
+    $t = preg_replace('#<br\s*/?>#i', "\n", $t);
+    $t = preg_replace('#</(?:h[1-6]|p|div|li|tr|table|title|pre|blockquote|center)\s*>#i', "\n", $t);
+    $t = html_entity_decode(strip_tags((string)$t), ENT_QUOTES | ENT_HTML5, 'UTF-8');
     $out = [];
-    foreach ($lineas as $l) { $t = trim(html_entity_decode(strip_tags((string)$l), ENT_QUOTES | ENT_HTML5, 'UTF-8')); if ($t !== '') $out[] = $t; }
+    foreach (preg_split('/\r\n|\n|\r/', $t) as $l) { $l = trim($l); if ($l !== '') $out[] = $l; }
     return $out;
 }
+
+/** Tareas cuya salida es HTML de los utilitarios. */
+const PH_TAREAS_HTML = ['caja_correo', 'mensajeria_update', 'prefacturas_update'];
 
 function ph_log_archivo(string $path): array
 {
@@ -137,7 +149,7 @@ function api_tarea_log(): array
     ];
     if (isset($locales[$id])) {
         [$lineas, $truncado] = ph_log_archivo($locales[$id]);
-        if ($id === 'caja_correo') $lineas = ph_log_sin_html($lineas);
+        if (in_array($id, PH_TAREAS_HTML, true)) $lineas = ph_log_sin_html($lineas);
         return ['ok' => true, 'id' => $id, 'lineas' => $lineas, 'truncado' => $truncado];
     }
     $out = []; $rc = 0;

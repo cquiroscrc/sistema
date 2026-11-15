@@ -10,7 +10,8 @@ Group=www-data
 UMask=0027
 StandardOutput=append:/var/log/lospaticas/mensajeria-update.log
 StandardError=append:/var/log/lospaticas/mensajeria-update.log
-ExecStart=/usr/bin/php8.5 /var/www/lospaticas/sistema/utilitarios/mensajeria_update.php
+# Solo el texto del resultado (sin HTML ni script); pipefail conserva el codigo de salida de PHP.
+ExecStart=/bin/bash -o pipefail -c '/usr/bin/php8.5 /var/www/lospaticas/sistema/utilitarios/mensajeria_update.php | /usr/local/sbin/paticas-solo-texto'
 Nice=5
 NoNewPrivileges=yes
 PrivateTmp=yes

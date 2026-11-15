@@ -1,3 +1,19 @@
-#!/bin/bash
-# Filtro de salida para tareas del panel: quita etiquetas HTML, espacios sobrantes y lineas vacias.
-exec /usr/bin/sed -E -e 's/<[^>]*>//g' -e 's/^[[:space:]]+//' -e 's/[[:space:]]+$//' -e '/^$/d'
+#!/usr/bin/perl
+# Filtro de salida para tareas del panel: deja solo el texto del resultado, una linea por resultado.
+# Quita bloques <script>...</script> (tambien sin cerrar), convierte <br> y cierres de bloque en saltos de linea,
+# elimina el resto de etiquetas, decodifica entidades basicas, recorta espacios y descarta lineas vacias.
+use strict; use warnings;
+binmode STDIN; binmode STDOUT;
+local $/; my $t = <STDIN>; $t = '' unless defined $t;
+$t =~ s{<!--.*?-->}{}gs;
+$t =~ s{<script\b.*?</script\s*>}{\n}gis;
+$t =~ s{\A.*</script\s*>}{}is;        # cierre huerfano (bloque cortado al inicio)
+$t =~ s{<script\b.*\z}{}is;           # apertura sin cierre
+$t =~ s{<br\s*/?>}{\n}gi;
+$t =~ s{</(?:h[1-6]|p|div|li|tr|table|title|pre|blockquote|center)\s*>}{\n}gi;
+$t =~ s{<[^>]*>}{}g;
+my %ent = (amp => '&', lt => '<', gt => '>', quot => '"', apos => "'", nbsp => ' ');
+$t =~ s{&(amp|lt|gt|quot|apos|nbsp);}{$ent{$1}}g;
+$t =~ s{&#(\d+);}{$1 < 128 ? chr($1) : "&#$1;"}ge;
+for my $l (split /\r?\n|\r/, $t) { $l =~ s/^\s+//; $l =~ s/\s+$//; print "$l\n" if length $l; }
+exit 0;
