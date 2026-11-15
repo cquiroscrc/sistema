@@ -9,6 +9,7 @@ require_once __DIR__ . '/tareas/retencion-lib.php';
 require_once __DIR__ . '/correo/correo-lib.php';
 require_once __DIR__ . '/correo/api-correo.php';
 require_once __DIR__ . '/certificados/cert-lib.php';
+require_once __DIR__ . '/comprobantes/reintento-lib.php';
 $a = $_GET['a'] ?? '';
 try {
     // Sin sesion solo se permite: sesion (token CSRF y estado), login y logout.
@@ -251,6 +252,7 @@ function api_docs(): array
             'estado' => estado_ui($r), 'estado_bd' => $r['ESTADO'], 'correo' => $r['EMAIL_ENVIADO'],
             'error' => ph_mask(ph_utf8($r['ULTIMO_ERROR'])),
             'pdf' => (int)$r['TIENE_PDF'] === 1 || ($clave !== '' && ph_dedata_file($r['PDF_PATH'], $r['FECHATIMBRADO'], $clave . '.pdf') !== null),
+            'reintento' => (fn($x) => ['ok' => $x[0], 'motivo' => $x[1]])(ph_reintento($r, (string)$r['NUMERO_DOC'])),
         ];
     }
     return ['ok' => true, 'total' => $total, 'page' => $page, 'size' => $size, 'orden' => $oCol, 'dir' => $oDir, 'rows' => $rows];
@@ -298,7 +300,7 @@ function api_doc(): array
         'consecutivo' => xml_val($xml, "//*[local-name()='NumeroConsecutivo']"),
         'mensaje_hacienda' => xml_val($resp, "//*[local-name()='DetalleMensaje']"),
         'xml' => $xml, 'xml_respuesta' => $resp, 'bitacora' => $bit,
-        'puede_reintentar' => puede_reintentar($r),
+        'puede_reintentar' => ($ri = ph_reintento($r + ['TIENE_RESP' => trim((string)$r['XML_RESPUESTA']) !== ''], $num))[0], 'reintento_motivo' => $ri[1],
         'pdf' => doc_pdf($tipo, $num, true) !== null,
         'xml_firmado' => $xml !== '' || ph_dedata_file($r['XML_PATH'], $r['FECHATIMBRADO'], $r['SELLO_SAT'] . '.xml') !== null,
         'xml_resp' => $resp !== '' || ph_dedata_file($r['XML_PATH'], $r['FECHATIMBRADO'], 'RSP_' . $r['SELLO_SAT'] . '.xml') !== null];
@@ -369,32 +371,7 @@ function api_cola(): array
 }
 
 /* ---------------- Acciones ---------------- */
-function puede_reintentar(array $r): bool
-{
-    return strtolower(trim((string)$r['ESTADO'])) === 'error' && trim((string)($r['ENVIADO'] ?? 'N')) !== 'S' && trim((string)($r['ACEPTADO'] ?? 'N')) !== 'S';
-}
-
-function ph_servicio_activo(): bool
-{
-    return (ph_systemctl_show(PH_UNIT . '.timer', ['ActiveState'])['ActiveState'] ?? '') === 'active';
-}
-
-function api_reintentar(): array
-{
-    $tipo = (string)($_POST['tipo'] ?? ''); $num = (string)($_POST['numero'] ?? '');
-    if (!ph_servicio_activo()) return ['ok' => false, 'error' => 'El servicio de envio esta detenido: inicielo para poder reintentar documentos'];
-    $st = ph_db()->prepare("SELECT RTRIM(ESTADO) ESTADO, ENVIADO, ACEPTADO FROM dbo.DOC_ELECTRONICO_PROCESADO WHERE TIPO_DOC = ? AND NUMERO_DOC = ?");
-    $st->execute([$tipo, $num]);
-    $r = $st->fetch(PDO::FETCH_ASSOC);
-    if (!$r) return ['ok' => false, 'error' => "No existe $tipo $num en DOC_ELECTRONICO_PROCESADO"];
-    if (!puede_reintentar($r)) return ['ok' => false, 'error' => "Solo se reintentan documentos en estado 'error' no enviados (estado actual: {$r['ESTADO']})"];
-    $u = ph_db()->prepare("UPDATE dbo.DOC_ELECTRONICO_PROCESADO SET ESTADO = 'reintentar', ULTIMO_ERROR = LEFT(? + ISNULL(ULTIMO_ERROR, ''), 4000)
-        WHERE TIPO_DOC = ? AND NUMERO_DOC = ? AND ESTADO = 'error' AND ISNULL(ENVIADO, 'N') <> 'S' AND ISNULL(ACEPTADO, 'N') <> 'S'");
-    $u->execute(['[Reintento solicitado en panel por ' . ph_user() . ' ' . date('Y-m-d H:i:s') . '] ', $tipo, $num]);
-    $n = $u->rowCount();
-    if ($n === 1) ph_accion("reintento solicitado $tipo $num", 'Info', $num, $tipo);
-    return ['ok' => $n === 1, 'mensaje' => $n === 1 ? "$tipo $num marcado para reintento; lo enviara el proximo lote" : 'No se actualizo (el estado cambio)'];
-}
+/* Reintento de envio: comprobantes/reintento-lib.php (ph_reintento, api_reintentar, ph_servicio_activo) */
 
 function api_servicio(): array
 {

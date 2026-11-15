@@ -60,4 +60,5 @@ export interface LogRow { f: string; nivel: string; doc: string; texto: string; 
 export interface DocRow {
   tipo: string; numero: string; clave: string; consecutivo: string; fecha: string; fecha_emision: string;
   receptor: string; email: string; total: number | null; estado: Estado; estado_bd: string; correo: string; error: string; pdf: boolean;
+  reintento?: { ok: boolean; motivo: string };
 }

@@ -6,6 +6,8 @@ import { SortTh, siguienteOrden, type Orden } from '../components/SortTh';
 import { Button, Card, Drawer, Empty, EstadoBadge, Input, Label, Modal, Pill, Select, Spinner, Tabs, useToast } from '../components/ui';
 
 type F = { estado: string; tipo: string; q: string; desde: string; hasta: string };
+// Columna de acciones fija a la derecha con fondo sólido (capa ::before para el tono del encabezado / hover de la fila)
+const STICKY = "sticky right-0 z-10 bg-card shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.25)] before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:content-['']";
 
 export default function Comprobantes({ status, onCambio }: { status: Status | null; onCambio: () => void }) {
   const [f, setF] = useState<F>({ estado: '', tipo: '', q: '', desde: '', hasta: '' });
@@ -13,6 +15,9 @@ export default function Comprobantes({ status, onCambio }: { status: Status | nu
   const [data, setData] = useState<{ total: number; size: number; rows: DocRow[] } | null>(null);
   const [sel, setSel] = useState<{ tipo: string; numero: string } | null>(null);
   const [orden, setOrden] = useState<Orden>({ col: 'fecha', dir: 'desc' });
+  const [reint, setReint] = useState<DocRow | null>(null);
+  const [reintEnv, setReintEnv] = useState(false);
+  const toast = useToast();
   const ordRef = useRef(orden);
   const cargar = useCallback(async (p: number, x: F, o: Orden = ordRef.current) => {
     setData(null); const j = await api('docs', { ...x, page: p, size: 25, orden: o.col, dir: o.dir });
@@ -21,6 +26,13 @@ export default function Comprobantes({ status, onCambio }: { status: Status | nu
   useEffect(() => { cargar(1, f); /* eslint-disable-next-line */ }, []);
   const set = (k: keyof F) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF(s => ({ ...s, [k]: e.target.value }));
   const paginas = data ? Math.max(1, Math.ceil(data.total / data.size)) : 1;
+  const reintentar = async () => {
+    if (!reint) return; setReintEnv(true);
+    try {
+      const j = await api('reintentar', {}, { tipo: reint.tipo, numero: reint.numero });
+      toast(j.ok ? 'ok' : 'error', j.mensaje || j.error); if (j.ok) { setReint(null); onCambio(); cargar(page, f); }
+    } finally { setReintEnv(false); }
+  };
   const ordenar = (c: string) => { const o = siguienteOrden(ordRef.current, c); ordRef.current = o; setOrden(o); cargar(1, f, o); };
   return <div className="space-y-4">
     <Card className="p-4">
@@ -37,21 +49,24 @@ export default function Comprobantes({ status, onCambio }: { status: Status | nu
     <Card className="overflow-hidden">
       <div className="overflow-x-auto"><table className="w-full text-sm">
         <thead className="bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground"><tr>
-          {([['Fecha', 'fecha'], ['Documento', 'documento'], ['Consecutivo / clave', 'consecutivo'], ['Receptor', 'receptor'], ['Total', 'total'], ['Estado', 'estado'], ['', '']] as const).map(([h, c]) =>
-            <SortTh key={h || 'acc'} label={h} col={c || undefined} orden={orden} onSort={ordenar} className={h === 'Total' ? 'text-right' : undefined} />)}</tr></thead>
+          {([['Fecha', 'fecha'], ['Documento', 'documento'], ['Consecutivo / clave', 'consecutivo'], ['Receptor', 'receptor'], ['Total', 'total'], ['Estado', 'estado']] as const).map(([h, c]) =>
+            <SortTh key={h} label={h} col={c} orden={orden} onSort={ordenar} className={h === 'Total' ? 'text-right' : undefined} />)}
+          <th className={cn(STICKY, 'px-4 py-3 text-right font-medium before:bg-muted/60')}><span className="sr-only">Acciones</span></th></tr></thead>
         <tbody className="divide-y">
           {!data ? <tr><td colSpan={7} className="p-10 text-center"><Spinner /></td></tr> : !(data.rows ?? []).length ? <tr><td colSpan={7}><Empty>Sin comprobantes para el filtro.</Empty></td></tr> :
-            (data.rows ?? []).map(r => <tr key={r.tipo + r.numero} className="cursor-pointer hover:bg-muted/40" onClick={() => setSel({ tipo: r.tipo, numero: r.numero })}>
+            (data.rows ?? []).map(r => <tr key={r.tipo + r.numero} className="group cursor-pointer hover:bg-muted/40" onClick={() => setSel({ tipo: r.tipo, numero: r.numero })}>
               <td className="whitespace-nowrap px-4 py-3 tabular-nums text-muted-foreground">{r.fecha.slice(0, 16)}</td>
               <td className="whitespace-nowrap px-4 py-3"><Pill className="mr-2">{r.tipo}</Pill><span className="font-medium">{r.numero}</span></td>
               <td className="px-4 py-3"><div className="font-mono text-xs">{r.consecutivo}</div><div className="max-w-[15rem] truncate font-mono text-[11px] text-muted-foreground" title={r.clave}>{r.clave}</div></td>
               <td className="px-4 py-3"><div>{r.receptor}</div><div className="max-w-[14rem] truncate text-xs text-muted-foreground">{r.email}</div></td>
               <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{fmtMonto(r.total)}</td>
               <td className="px-4 py-3"><EstadoBadge estado={r.estado} />{r.error && !['aceptado'].includes(r.estado) && <div className="mt-1 max-w-[16rem] truncate text-xs text-muted-foreground" title={r.error}>{r.error}</div>}</td>
-              <td className="whitespace-nowrap px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
+              <td className={cn(STICKY, 'whitespace-nowrap px-4 py-3 text-right before:bg-muted/40 before:opacity-0 group-hover:before:opacity-100')} onClick={e => e.stopPropagation()}>
                 {r.pdf ? <a className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10" target="_blank" rel="noreferrer" href={apiUrl('pdf', { tipo: r.tipo, numero: r.numero })}><FileText className="h-3.5 w-3.5" />PDF</a>
                   : <span className="text-xs text-muted-foreground">PDF no disponible</span>}
-                <Button size="sm" variant="ghost" onClick={() => setSel({ tipo: r.tipo, numero: r.numero })}><Eye className="h-3.5 w-3.5" /></Button></td>
+                <Button size="sm" variant="ghost" title="Ver detalle" aria-label="Ver detalle" onClick={() => setSel({ tipo: r.tipo, numero: r.numero })}><Eye className="h-3.5 w-3.5" /></Button>
+                <span className="inline-block" title={r.reintento?.ok ? 'Reintentar envío' : `No se puede reintentar: ${r.reintento?.motivo ?? ''}`}>
+                  <Button size="sm" variant="ghost" disabled={!r.reintento?.ok} aria-label={r.reintento?.ok ? 'Reintentar envío' : `No se puede reintentar: ${r.reintento?.motivo ?? ''}`} onClick={() => setReint(r)}><RotateCcw className="h-3.5 w-3.5" /></Button></span></td>
             </tr>)}
         </tbody></table></div>
       <div className="flex items-center justify-between border-t px-4 py-3 text-xs text-muted-foreground">
@@ -60,6 +75,11 @@ export default function Comprobantes({ status, onCambio }: { status: Status | nu
           Página {page} de {fmtNum(paginas)}<Button size="sm" variant="outline" disabled={page >= paginas} onClick={() => cargar(page + 1, f)}><ChevronRight className="h-3.5 w-3.5" /></Button></div>
       </div>
     </Card>
+    <Modal open={!!reint} onClose={() => setReint(null)} title="Reintentar envío a Hacienda" tone="warning"
+      footer={<><Button variant="outline" onClick={() => setReint(null)}>Cancelar</Button><Button loading={reintEnv} onClick={reintentar}><RotateCcw className="h-4 w-4" />Devolver a la cola</Button></>}>
+      <p>El documento <b>{reint?.tipo} {reint?.numero}</b> volverá a la cola de envío (estado <code>reintentar</code>) y el próximo lote del servicio lo enviará a Hacienda.</p>
+      <p className="mt-2 text-muted-foreground">Se registra en la bitácora con su usuario.</p>
+    </Modal>
     <DocDrawer sel={sel} onClose={() => setSel(null)} status={status} onCambio={() => { onCambio(); cargar(page, f); }} />
   </div>;
 }
@@ -97,8 +117,7 @@ function DocDrawer({ sel, onClose, status, onCambio }: { sel: { tipo: string; nu
       {d.xml_firmado ? <a href={apiUrl('xml', { ...s, kind: 'firmado' })}><Button size="sm" variant="outline"><FileDown className="h-3.5 w-3.5" />XML firmado</Button></a> : <span className="text-xs text-muted-foreground">XML firmado no disponible</span>}
       {d.xml_resp ? <a href={apiUrl('xml', { ...s, kind: 'respuesta' })}><Button size="sm" variant="outline"><FileDown className="h-3.5 w-3.5" />XML respuesta</Button></a> : <span className="text-xs text-muted-foreground">Respuesta no disponible</span>}
       <div className="ml-auto flex items-center gap-2">
-        {!d.puede_reintentar ? <span className="text-xs text-muted-foreground">Reintentar solo aplica a documentos en estado “error” no enviados</span>
-          : !activo && <span className="text-xs text-warning">Inicie el servicio de envío para reintentar</span>}
+        {!d.puede_reintentar && <span className="text-xs text-muted-foreground">{d.reintento_motivo || 'No se puede reintentar'}</span>}
         <Button size="sm" variant="primary" disabled={!d.puede_reintentar || !activo} onClick={() => setConfirmar(true)}><RotateCcw className="h-3.5 w-3.5" />Reintentar</Button></div>
     </>}>
     {!d || !doc ? <div className="flex justify-center py-20"><Spinner /></div> : <div className="space-y-5">
