@@ -5,8 +5,8 @@ declare(strict_types=1);
  * Bitácora del sender api44: niveles, RUN_ID, componente, código,
  * resumen por corrida, heartbeat y avisos deduplicados.
  */
-const BITACORA_HEARTBEAT_SEG = 2700;
-const BITACORA_ALERTA_SEG = 21600;
+const BITACORA_HEARTBEAT_SEG = 300;  // 5 minutos: un resumen aunque no haya novedad
+const BITACORA_ALERTA_SEG = 1800;  // 30 minutos: reescribir el aviso si sigue activo
 const BITACORA_ESTADO_ARCHIVO = '/var/lib/lospaticas/fe/sender-resumen.json';
 
 function bitacora_run_id(): string
