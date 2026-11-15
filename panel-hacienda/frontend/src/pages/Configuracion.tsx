@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Mail, Save, PlugZap, KeyRound, HardDrive, FolderSync, FileKey2 } from 'lucide-react';
+import { Mail, Save, PlugZap, KeyRound, HardDrive, FolderSync, FileKey2, ScrollText } from 'lucide-react';
 import Certificados from '../components/Certificados';
 import RutasDEData from './RutasDEData';
 import { api } from '../lib/api';
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Label, Select, Tabs, Spinner, useToast } from '../components/ui';
 
-export type Pestana = 'correo' | 'respaldos' | 'rutas' | 'certificados';
+export type Pestana = 'correo' | 'respaldos' | 'rutas' | 'certificados' | 'bitacora';
 type Smtp = { host: string; puerto: number; cifrado: 'starttls' | 'ssl' | 'ninguno'; usuario: string; remitente: string; remitente_nombre: string; password_guardada: boolean; configurado: boolean; actualizado?: string | null; actualizado_por?: string | null };
 const PUERTO: Record<Smtp['cifrado'], number> = { starttls: 587, ssl: 465, ninguno: 25 };
 
@@ -105,6 +105,43 @@ function Respaldos() {
   </Card>;
 }
 
+function BitacoraRetencion() {
+  const toast = useToast();
+  const [d, setD] = useState<{ debug_dias: number; otros_dias: number; debug_viejos?: number; otros_viejos?: number; mensaje?: string } | null>(null);
+  const [debug, setDebug] = useState('7');
+  const [otros, setOtros] = useState('90');
+  const [guardando, setGuardando] = useState(false);
+  const cargar = () => api('config_bitacora').then(j => {
+    if (j.ok) { setD(j); setDebug(String(j.debug_dias)); setOtros(String(j.otros_dias)); } else toast('error', j.error);
+  }).catch(() => {});
+  useEffect(() => { cargar(); }, []);
+  const ok = (v: string) => /^\d{1,4}$/.test(v) && +v >= 1 && +v <= 3650;
+  const guardar = async () => {
+    setGuardando(true);
+    try {
+      const j = await api('config_bitacora_guardar', {}, { debug_dias: debug, otros_dias: otros });
+      if (j.ok) { setD(j); setDebug(String(j.debug_dias)); setOtros(String(j.otros_dias)); toast('ok', j.mensaje || 'Guardado'); }
+      else toast('error', j.error);
+    } finally { setGuardando(false); }
+  };
+  if (!d) return <div className="flex h-40 items-center justify-center"><Spinner /></div>;
+  return <Card>
+    <CardHeader><CardTitle className="flex items-center gap-2"><ScrollText className="h-4 w-4 text-primary" />Retención de la bitácora</CardTitle></CardHeader>
+    <CardBody>
+      <form onSubmit={e => { e.preventDefault(); guardar(); }} className="grid gap-4 md:grid-cols-6">
+        <div className="md:col-span-3"><Label htmlFor="bd">Días a mantener de DEBUG</Label>
+          <Input id="bd" type="number" min={1} max={3650} value={debug} onChange={e => setDebug(e.target.value)} required />
+          <p className="mt-1 text-xs text-muted-foreground">Sugerido: 7. Con el valor actual habría {d.debug_viejos ?? '…'} filas DEBUG para borrar.</p></div>
+        <div className="md:col-span-3"><Label htmlFor="bo">Días a mantener del resto (INFO, avisos y errores)</Label>
+          <Input id="bo" type="number" min={1} max={3650} value={otros} onChange={e => setOtros(e.target.value)} required />
+          <p className="mt-1 text-xs text-muted-foreground">Sugerido: 90. Con el valor actual habría {d.otros_viejos ?? '…'} filas para borrar.</p></div>
+        <div className="md:col-span-6"><Button type="submit" loading={guardando} disabled={!ok(debug) || !ok(otros)}><Save className="h-4 w-4" />Guardar</Button></div>
+      </form>
+      <p className="mt-4 text-xs text-muted-foreground">{d.mensaje || 'Guardar no borra nada. El temporizador de limpieza está deshabilitado; las filas de antes de 2026 ya están en la tabla histórica y esta retención no las toca.'}</p>
+    </CardBody>
+  </Card>;
+}
+
 export default function Configuracion({ tab, onTab }: { tab: Pestana; onTab: (t: Pestana) => void }) {
   return <div className="space-y-4">
     <Tabs value={tab} onChange={onTab} items={[
@@ -112,10 +149,12 @@ export default function Configuracion({ tab, onTab }: { tab: Pestana; onTab: (t:
       { id: 'respaldos', label: <span className="inline-flex items-center gap-1.5"><HardDrive className="h-3.5 w-3.5" />Respaldos</span> },
       { id: 'rutas', label: <span className="inline-flex items-center gap-1.5"><FolderSync className="h-3.5 w-3.5" />Rutas</span> },
       { id: 'certificados', label: <span className="inline-flex items-center gap-1.5"><FileKey2 className="h-3.5 w-3.5" />Certificados</span> },
+      { id: 'bitacora', label: <span className="inline-flex items-center gap-1.5"><ScrollText className="h-3.5 w-3.5" />Bitácora</span> },
     ]} />
     {tab === 'correo' && <Correo />}
     {tab === 'respaldos' && <Respaldos />}
     {tab === 'rutas' && <RutasDEData />}
     {tab === 'certificados' && <Certificados />}
+    {tab === 'bitacora' && <BitacoraRetencion />}
   </div>;
 }

@@ -56,7 +56,7 @@ export interface Status {
   ultima_bitacora: string; ultimo_documento: string;
   conteos: { error: number; reintentar: number; pendiente_respuesta: number; rechazado_hoy: number; aceptado_hoy: number; enviados_hoy: number; cola: number };
 }
-export interface LogRow { f: string; nivel: string; doc: string; texto: string; sesion?: string }
+export interface LogRow { f: string; nivel: string; doc: string; texto: string; sesion?: string; tipo_doc?: string; numero?: string; run_id?: string; componente?: string; codigo?: string; hist?: boolean }
 export interface DocRow {
   tipo: string; numero: string; clave: string; consecutivo: string; fecha: string; fecha_emision: string;
   receptor: string; email: string; total: number | null; estado: Estado; estado_bd: string; correo: string; error: string; pdf: boolean;

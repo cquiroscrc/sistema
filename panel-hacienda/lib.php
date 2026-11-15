@@ -272,11 +272,11 @@ function ph_accion_log(string $msg): void
 }
 
 /** Registra en dbo.BITACORA (SESSION_ID 'panel-hacienda'); nunca falla la peticion. */
-function ph_bitacora(string $texto, string $nivel = 'Info', string $doc = '', string $tipo = ''): void
+function ph_bitacora(string $texto, string $nivel = 'Info', string $doc = '', string $tipo = '', string $codigo = 'PANEL_ACCION'): void
 {
     try {
-        ph_db()->prepare("INSERT INTO dbo.BITACORA (SESSION_ID, TIPO, TEXTO, FECHA_HORA, DOCUMENTO, TIPO_DOCUMENTO) VALUES ('panel-hacienda', ?, ?, SYSDATETIME(), ?, ?)")
-            ->execute([$nivel, mb_substr('Panel: ' . $texto, 0, 4000), $doc, $tipo]);
+        ph_db()->prepare("INSERT INTO dbo.BITACORA (SESSION_ID, TIPO, TEXTO, FECHA_HORA, DOCUMENTO, TIPO_DOCUMENTO, RUN_ID, COMPONENTE, CODIGO) VALUES ('panel-hacienda', ?, ?, SYSDATETIME(), ?, ?, NULL, 'panel', ?)")
+            ->execute([$nivel, mb_substr('Panel: ' . $texto, 0, 4000), $doc, $tipo, $codigo !== '' ? $codigo : 'PANEL_ACCION']);
     } catch (Throwable $e) {
         error_log('panel-hacienda: bitacora: ' . $e->getMessage());
     }

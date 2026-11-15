@@ -23,7 +23,20 @@ export default function Comprobantes({ status, onCambio }: { status: Status | nu
     setData(null); const j = await api('docs', { ...x, page: p, size: 25, orden: o.col, dir: o.dir });
     setData(j.ok ? j : { total: 0, size: 25, rows: [] }); setPage(p);
   }, []);
-  useEffect(() => { cargar(1, f); /* eslint-disable-next-line */ }, []);
+  useEffect(() => {
+    const q = new URLSearchParams((location.hash.split('?')[1] || ''));
+    const doc = (q.get('doc') || '').trim();
+    const tipo = (q.get('tipo') || '').trim();
+    if (doc) {
+      const nf = { ...f, q: doc };
+      setF(nf);
+      if (tipo) setSel({ tipo, numero: doc });
+      cargar(1, nf);
+      return;
+    }
+    cargar(1, f);
+    /* eslint-disable-next-line */
+  }, []);
   const set = (k: keyof F) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF(s => ({ ...s, [k]: e.target.value }));
   const paginas = data ? Math.max(1, Math.ceil(data.total / data.size)) : 1;
   const reintentar = async () => {

@@ -6,6 +6,7 @@ require_once __DIR__ . '/buzon/buzon-lib.php';
 require_once __DIR__ . '/db/migrar-lib.php';
 require_once __DIR__ . '/tareas/tareas-lib.php';
 require_once __DIR__ . '/tareas/retencion-lib.php';
+require_once __DIR__ . '/tareas/bitacora-retencion-lib.php';
 require_once __DIR__ . '/correo/correo-lib.php';
 require_once __DIR__ . '/correo/api-correo.php';
 require_once __DIR__ . '/certificados/cert-lib.php';
@@ -26,6 +27,9 @@ try {
         case 'migraciones':         ph_json(api_migraciones());
         case 'migraciones_aplicar': ph_require_post(); ph_json(api_migraciones_aplicar());
         case 'logs':     ph_json(api_logs());
+        case 'logs_avisos': ph_json(api_logs_avisos());
+        case 'config_bitacora':        ph_json(api_config_bitacora());
+        case 'config_bitacora_guardar': ph_require_post(); ph_json(api_config_bitacora_guardar());
         case 'docs':     ph_json(api_docs());
         case 'doc':      ph_json(api_doc());
         case 'cola':     ph_json(api_cola());
@@ -124,10 +128,15 @@ function api_logs(): array
     $since = isset($_GET['since']) && $_GET['since'] !== '' ? (string)$_GET['since'] : null;
     $before = isset($_GET['before']) && $_GET['before'] !== '' ? (string)$_GET['before'] : null;
 
+    $vista = in_array($_GET['vista'] ?? '', ['eventos', 'avisos', 'diagnostico'], true) ? $_GET['vista'] : 'eventos';
+    $componente = trim((string)($_GET['componente'] ?? ''));
+    $codigo = trim((string)($_GET['codigo'] ?? ''));
+    $run = trim((string)($_GET['run'] ?? ''));
+    $hist = (string)($_GET['hist'] ?? '') === '1';
+
     if (in_array($src, ['bitacora', 'bitacora_fe', 'bitacora_panel'], true)) {
         $w = []; $p = [];
         // Filas del panel: SESSION_ID = 'panel-hacienda' (ph_bitacora); el resto es de la facturacion electronica.
-        // El panel escribe en BITACORA desde su instalacion (2026-11-04): ese limite usa IX_FECHAS y evita recorrer toda la tabla.
         if ($src === 'bitacora_panel') { $w[] = "SESSION_ID = 'panel-hacienda'"; $w[] = "FECHA_HORA >= '20261104'"; }
         elseif ($src === 'bitacora_fe') $w[] = "(SESSION_ID IS NULL OR SESSION_ID <> 'panel-hacienda')";
         if ($since !== null) { $w[] = 'FECHA_HORA > CONVERT(datetime, ?, 121)'; $p[] = ph_date($since) ?? date('Y-m-d H:i:s'); }
@@ -136,15 +145,39 @@ function api_logs(): array
         if ($hasta) { $w[] = 'FECHA_HORA <= CONVERT(datetime, ?, 121)'; $p[] = strlen($hasta) === 10 ? "$hasta 23:59:59" : $hasta; }
         if (!$desde && $since === null && $before === null && $texto !== '') { $w[] = 'FECHA_HORA >= DATEADD(day, -7, GETDATE())'; }
         if ($nivel) { $w[] = 'TIPO = ?'; $p[] = $nivel; }
+        elseif ($vista === 'eventos') { $w[] = "TIPO IN ('Info','Warning','Error')"; }
+        elseif ($vista === 'avisos') { $w[] = "TIPO IN ('Warning','Error')"; }
         if ($doc !== '') { $w[] = 'DOCUMENTO LIKE ?'; $p[] = '%' . $doc . '%'; }
         if ($texto !== '') { $w[] = 'TEXTO LIKE ?'; $p[] = '%' . $texto . '%'; }
+        if ($componente !== '') { $w[] = 'COMPONENTE = ?'; $p[] = $componente; }
+        if ($codigo !== '') { $w[] = 'CODIGO = ?'; $p[] = $codigo; }
+        if ($run !== '') { $w[] = 'RUN_ID = ?'; $p[] = $run; }
         $where = $w ? 'WHERE ' . implode(' AND ', $w) : '';
         $order = $since !== null ? 'ASC' : 'DESC';
-        $st = ph_db()->prepare("SELECT TOP $limit CONVERT(varchar(23), FECHA_HORA, 121) AS f, RTRIM(TIPO) AS nivel, TEXTO AS texto, RTRIM(DOCUMENTO) AS doc, RTRIM(TIPO_DOCUMENTO) AS tipo, RTRIM(SESSION_ID) AS sesion FROM dbo.BITACORA $where ORDER BY FECHA_HORA $order");
-        $st->execute($p);
+        $cols = "CONVERT(varchar(23), FECHA_HORA, 121) AS f, RTRIM(TIPO) AS nivel, TEXTO AS texto, RTRIM(DOCUMENTO) AS doc, RTRIM(TIPO_DOCUMENTO) AS tipo, RTRIM(SESSION_ID) AS sesion, RTRIM(RUN_ID) AS run_id, RTRIM(COMPONENTE) AS componente, RTRIM(CODIGO) AS codigo";
+        if ($hist) {
+            $sql = "SELECT TOP $limit * FROM (SELECT $cols, 0 AS hist FROM dbo.BITACORA $where UNION ALL SELECT $cols, 1 AS hist FROM dbo.BITACORA_HIST $where) u ORDER BY f $order";
+            $st = ph_db()->prepare($sql);
+            $st->execute(array_merge($p, $p));
+        } else {
+            $st = ph_db()->prepare("SELECT TOP $limit $cols, 0 AS hist FROM dbo.BITACORA $where ORDER BY FECHA_HORA $order");
+            $st->execute($p);
+        }
         $rows = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            $rows[] = ['f' => $r['f'], 'nivel' => $r['nivel'], 'doc' => trim(($r['tipo'] ?? '') . ' ' . ($r['doc'] ?? '')), 'sesion' => $r['sesion'], 'texto' => ph_mask(ph_utf8($r['texto']))];
+            $rows[] = [
+                'f' => $r['f'],
+                'nivel' => $r['nivel'],
+                'doc' => trim(($r['tipo'] ?? '') . ' ' . ($r['doc'] ?? '')),
+                'tipo_doc' => trim((string)($r['tipo'] ?? '')),
+                'numero' => trim((string)($r['doc'] ?? '')),
+                'sesion' => $r['sesion'],
+                'texto' => ph_mask(ph_utf8($r['texto'])),
+                'run_id' => $r['run_id'] ?? '',
+                'componente' => $r['componente'] ?? '',
+                'codigo' => $r['codigo'] ?? '',
+                'hist' => !empty($r['hist']),
+            ];
         }
         if ($since !== null) $rows = array_reverse($rows);
         $newest = $rows ? $rows[0]['f'] : $since;
@@ -176,6 +209,46 @@ function api_logs(): array
     if ($since !== null) $rows = array_reverse($rows);
     return ['ok' => true, 'src' => $src, 'archivo' => $file, 'tamano' => $size, 'rows' => $rows,
         'cursor_nuevo' => (string)$size, 'cursor_antiguo' => (string)$cursor, 'mas' => $since === null && $cursor > 0];
+}
+
+
+function api_logs_avisos(): array
+{
+    try {
+        $st = ph_db()->query("SELECT CODIGO, DOCUMENTO, TIPO_DOCUMENTO, MENSAJE, VECES, CONVERT(varchar(19), PRIMERA_VEZ, 121) AS primera, CONVERT(varchar(19), ULTIMA_VEZ, 121) AS ultima FROM dbo.BITACORA_ALERTA WHERE ACTIVA = 1 ORDER BY ULTIMA_VEZ DESC");
+        $rows = [];
+        $futura = 0;
+        $fechaEnvio = null;
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $rows[] = [
+                'codigo' => $r['CODIGO'],
+                'documento' => trim((string)$r['DOCUMENTO']),
+                'tipo' => trim((string)$r['TIPO_DOCUMENTO']),
+                'mensaje' => ph_mask(ph_utf8((string)$r['MENSAJE'])),
+                'veces' => (int)$r['VECES'],
+                'primera' => $r['primera'],
+                'ultima' => $r['ultima'],
+            ];
+            if (($r['CODIGO'] ?? '') === 'DOC_FECHA_FUTURA' || ($r['CODIGO'] ?? '') === 'DOC_CLAVE_FECHA_FUTURA') {
+                $futura++;
+                if (preg_match('/fechafact \((\d{4}-\d{2}-\d{2})\)/', (string)$r['MENSAJE'], $m)) $fechaEnvio = $m[1];
+            }
+        }
+        $resumen = [];
+        if ($futura) {
+            $cuando = $fechaEnvio ? date('d/m', strtotime($fechaEnvio) ?: time()) : '';
+            $resumen[] = $futura === 1
+                ? ('1 documento con fecha futura' . ($cuando ? ", se enviará el $cuando" : ''))
+                : ("$futura documentos con fecha futura" . ($cuando ? ", se enviarán el $cuando" : ''));
+        }
+        foreach ($rows as $r) {
+            if (str_starts_with((string)$r['codigo'], 'DOC_FECHA') || str_starts_with((string)$r['codigo'], 'DOC_CLAVE_FECHA')) continue;
+            $resumen[] = trim(($r['tipo'] ? $r['tipo'] . ' ' : '') . ($r['documento'] ?: $r['codigo']) . ': ' . mb_substr($r['mensaje'], 0, 120));
+        }
+        return ['ok' => true, 'rows' => $rows, 'resumen' => $resumen];
+    } catch (Throwable $e) {
+        return ['ok' => true, 'rows' => [], 'resumen' => [], 'aviso' => 'Sin tabla de avisos todavía'];
+    }
 }
 
 /* ---------------- Comprobantes ---------------- */
