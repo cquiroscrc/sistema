@@ -218,6 +218,7 @@ function api_logs_avisos(): array
         $st = ph_db()->query("SELECT CODIGO, DOCUMENTO, TIPO_DOCUMENTO, MENSAJE, VECES, CONVERT(varchar(19), PRIMERA_VEZ, 121) AS primera, CONVERT(varchar(19), ULTIMA_VEZ, 121) AS ultima FROM dbo.BITACORA_ALERTA WHERE ACTIVA = 1 ORDER BY ULTIMA_VEZ DESC");
         $rows = [];
         $futura = 0;
+        $tope = 0;
         $fechaEnvio = null;
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $rows[] = [
@@ -233,6 +234,9 @@ function api_logs_avisos(): array
                 $futura++;
                 if (preg_match('/fechafact \((\d{4}-\d{2}-\d{2})\)/', (string)$r['MENSAJE'], $m)) $fechaEnvio = $m[1];
             }
+            if (($r['CODIGO'] ?? '') === 'DOC_FALLOS_MAX') {
+                $tope++;
+            }
         }
         $resumen = [];
         if ($futura) {
@@ -240,6 +244,11 @@ function api_logs_avisos(): array
             $resumen[] = $futura === 1
                 ? ('1 documento con fecha futura' . ($cuando ? ", se enviará el $cuando" : ''))
                 : ("$futura documentos con fecha futura" . ($cuando ? ", se enviarán el $cuando" : ''));
+        }
+        if ($tope) {
+            $resumen[] = $tope === 1
+                ? '1 documento sacado de la cola tras varios fallos seguidos (use Reintentar cuando esté corregido)'
+                : "$tope documentos sacados de la cola tras varios fallos seguidos (use Reintentar cuando estén corregidos)";
         }
         foreach ($rows as $r) {
             if (str_starts_with((string)$r['codigo'], 'DOC_FECHA') || str_starts_with((string)$r['codigo'], 'DOC_CLAVE_FECHA')) continue;

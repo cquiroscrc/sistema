@@ -536,6 +536,10 @@ function registrarDocumentoNoEnviado(string $sessionID, string $Documento, strin
         $stm = $dbConn->prepare($sql);
         $stm->execute([':documento' => $Documento, ':tipoDoc' => $TipoDoc]);
 
+        // Fecha futura no se marca error: debe seguir en la cola hasta su fecha.
+        if ($codigo === 'DOC_FECHA_FUTURA' || $codigo === 'DOC_CLAVE_FECHA_FUTURA') {
+            return;
+        }
         if ($stm->fetchColumn()) {
             $sqlUpdate = "UPDATE DOC_ELECTRONICO_PROCESADO SET
                 ENVIADO = 'N', ACEPTADO = 'N', ERROR_LOCAL = 'S', ERROR_HACIENDA = 'N',
@@ -962,6 +966,7 @@ function ProcesarDocumento(string $sessionID, string $Documento, string $TipoDoc
 
         if (!$continuar) {
             Bitacora($sessionID, "El proceso se detuvo en la creacion del XML", $Documento, $TipoDoc);
+            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en la creacion del XML', 'envio', true);
             return;
         }
         $TIEMPO_EXPIRA_DOCHA_HORAS = getDatoCia($sessionID, "TIEMPO_EXPIRA_DOCHA_HORAS", $Documento, $TipoDoc);
@@ -990,6 +995,7 @@ function ProcesarDocumento(string $sessionID, string $Documento, string $TipoDoc
         $xmlFirmado = IniciaProcesoFirmado($xml, $sessionID, $Documento, $TipoDoc);
         if (!$continuar) {
             Bitacora($sessionID, "El proceso se detuvo en el firmado del documento", $Documento, $TipoDoc);
+            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en el firmado del documento', 'envio', true);
             return;
         }
 
@@ -1002,6 +1008,7 @@ function ProcesarDocumento(string $sessionID, string $Documento, string $TipoDoc
         }
         if (!$continuar) {
             Bitacora($sessionID, "El proceso se detuvo en el guardado del XML firmado en disco", $Documento, $TipoDoc);
+            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en el guardado del XML firmado en disco', 'envio', true);
             return;
         }
 
@@ -1012,6 +1019,7 @@ function ProcesarDocumento(string $sessionID, string $Documento, string $TipoDoc
         IniciaProcesoEnvioXML($xmlFirmado, $sessionID, $Documento, $TipoDoc);
         if (!$continuar) {
             Bitacora($sessionID, "El proceso se detuvo en el envio del documento", $Documento, $TipoDoc);
+            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en el envio del documento', 'envio', true);
             return;
         }
 
@@ -1028,19 +1036,23 @@ function ProcesarDocumento(string $sessionID, string $Documento, string $TipoDoc
 
         if (!$continuar) {
             Bitacora($sessionID, "El proceso se detuvo en el guardado del PDF en disco", $Documento, $TipoDoc);
+            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en el guardado del PDF en disco', 'envio', true);
             return;
         }
         Bitacora($sessionID, "Guardando PDF en base de datos", $Documento, $TipoDoc);
         UpdateDBPDF($sessionID, $Documento, $TipoDoc, $strPDF);
         if (!$continuar) {
             Bitacora($sessionID, "El proceso se detuvo en el guardado del PDF en base de datos", $Documento, $TipoDoc);
+            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en el guardado del PDF en base de datos', 'envio', true);
             return;
         }
 
         //Finalmente, envio el correo
         ProcesarCorreosPendientes($sessionID, $Documento, $TipoDoc);
-    } catch (Exception $ex) {
-        Bitacora($sessionID, "ProcesarDocumento Error: {$ex->getMessage()}({$ex->getLine()})", $Documento, $TipoDoc);
+    } catch (Throwable $ex) {
+        $msg = "ProcesarDocumento Error: {$ex->getMessage()}({$ex->getLine()})";
+        Bitacora($sessionID, $msg, $Documento, $TipoDoc, "Error", true, "envio", "DOC_EXCEPCION");
+        bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_EXCEPCION', $msg, 'envio', true);
     }
 }
 
@@ -2178,6 +2190,7 @@ function CargarConfiguraciones($sessionID)
     if (!empty($template_path)) {
         params_set("template_path", $template_path);
     }
+    params_set("max_fallos_doc", (string)bitacora_max_fallos_doc());
 }
 
 function Iniciar()
@@ -2194,21 +2207,38 @@ function Iniciar()
         return;
     }
 
+    if (!TestCertificateDates($sessionID)) {
+        bitacora_run_cerrar($sessionID);
+        return;
+    }
+
     try {
-        if (!TestCertificateDates($sessionID)) {
-            bitacora_run_cerrar($sessionID);
-            return;
-        }
-
         ProcesarPendientesEnvio($sessionID);
+    } catch (Throwable $ex) {
+        Bitacora($sessionID, 'Etapa envío: ' . $ex->getMessage(), '', '', 'Error', true, 'envio', 'ETAPA_ENVIO');
+        bitacora_run_etapa_error('envío');
+    }
+    try {
         ProcesarPendientesRespuesta($sessionID);
+    } catch (Throwable $ex) {
+        Bitacora($sessionID, 'Etapa respuesta: ' . $ex->getMessage(), '', '', 'Error', true, 'respuesta', 'ETAPA_RESPUESTA');
+        bitacora_run_etapa_error('respuesta');
+    }
+    try {
         ProcesarCorreosPendientes($sessionID);
+    } catch (Throwable $ex) {
+        Bitacora($sessionID, 'Etapa correo: ' . $ex->getMessage(), '', '', 'Error', true, 'recepcion', 'ETAPA_CORREO');
+        bitacora_run_etapa_error('correo');
+    }
+    try {
         SetEnProceso($sessionID, "NO");
+    } catch (Throwable $ex) {
+        Bitacora($sessionID, 'No se pudo liberar el bloqueo de proceso: ' . $ex->getMessage(), '', '', 'Error', true, 'envio', 'ERROR');
+    }
+    try {
         CloseTokenSession($sessionID);
-
-    } catch (Exception $ex) {
-        Bitacora($sessionID, $ex->getMessage(), "", "", "Error", true, "envio", "ERROR");
-        SetEnProceso($sessionID, "NO");
+    } catch (Throwable $ex) {
+        Bitacora($sessionID, 'Error al cerrar sesión de token: ' . $ex->getMessage(), '', '', 'Warning', true, 'token', 'TOKEN_CIERRE');
     }
     bitacora_run_cerrar($sessionID);
 
@@ -2341,17 +2371,23 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
         }
 
         $total_documentos = count($res);
-        $i = 1;
+        $i = 0;
         foreach ($res as $correo) {
+          try {
             $procesar = true;
 
             $Documento = $correo["NUMERO_DOC"];
             $TipoDoc = $correo["TIPO_DOC"];
+            $i++;
+
+            if (bitacora_correo_agotado((string)$Documento, (string)$TipoDoc)) {
+                continue;
+            }
 
             $clave = ObtenerDatoTabla($sessionID, "SELLO_SAT", "DOC_ELECTRONICO_PROCESADO", "NUMERO_DOC", "$Documento");
             if ($clave == "0") {
-                Bitacora($sessionID, "El documento no tiene una clave asignada", $Documento, $TipoDoc);
-                return;
+                bitacora_doc_fallo($sessionID, (string)$Documento, (string)$TipoDoc, 'MAIL_SIN_CLAVE', 'El documento no tiene una clave asignada', 'recepcion', false);
+                continue;
             }
             $fecha_timbrado=$correo["FECHATIMBRADO"];
             $directory_pdf = ObtenerDatoTabla($sessionID, "PDF_PATH", "DOC_ELECTRONICO_PROCESADO", "NUMERO_DOC", "$Documento");
@@ -2363,12 +2399,12 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
 
             //Si no tienen este dato no se pueden enviar los correos
             if (strlen($directory_pdf) <= 0) {
-                Bitacora($sessionID, "El directorio de almacenamiento de PDFs obtenido de la base de datos,  no existe", $Documento, $TipoDoc);
-                return;
+                bitacora_doc_fallo($sessionID, (string)$Documento, (string)$TipoDoc, 'MAIL_SIN_DIR_PDF', 'El directorio de almacenamiento de PDFs obtenido de la base de datos, no existe', 'recepcion', false);
+                continue;
             }
             if (strlen($directory_xml) <= 0) {
-                Bitacora($sessionID, "El directorio de almacenamiento de XMLs obtenido de la base de datos, no existe", $Documento, $TipoDoc);
-                return;
+                bitacora_doc_fallo($sessionID, (string)$Documento, (string)$TipoDoc, 'MAIL_SIN_DIR_XML', 'El directorio de almacenamiento de XMLs obtenido de la base de datos, no existe', 'recepcion', false);
+                continue;
             }
             Bitacora($sessionID, "Procesando correo $i de $total_documentos ", rtrim($Documento), rtrim($TipoDoc));
             //Prueba si tengo todos los adjuntos,sino los tengo no debo enviar los correos.
@@ -2550,15 +2586,20 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
 
                 }
             }
-            $i++;
+        } catch (Throwable $ex) {
+            $docE = isset($Documento) ? (string)$Documento : '';
+            $tipoE = isset($TipoDoc) ? (string)$TipoDoc : '';
+            $msg = "Excepción al enviar correo: {$ex->getMessage()}({$ex->getLine()})";
+            Bitacora($sessionID, $msg, $docE, $tipoE, "Error", true, "recepcion", "DOC_EXCEPCION");
+            if ($docE !== '') {
+                bitacora_doc_fallo($sessionID, $docE, $tipoE, 'DOC_EXCEPCION', $msg, 'recepcion', false);
+            }
+        }
         }
 
-    } catch (Exception $e) {
-        if (isset($logger)) {
-            Bitacora($sessionID, "Error al enviar correo, Descripcion:" . $e->getMessage() . "(" . $e->getLine() . "), \n Dump:\n" . $logger->dump(), $Documento, $TipoDoc);
-            Bitacora($sessionID, "Dump:\n" . $logger->dump(), $Documento, $TipoDoc);
-        }
-
+    } catch (Throwable $ex) {
+        Bitacora($sessionID, 'Error al preparar correos pendientes: ' . $ex->getMessage(), $Documento ?? '', $TipoDoc ?? '', 'Error', true, 'recepcion', 'ETAPA_CORREO');
+        throw $ex;
     }
 
 }
@@ -2586,9 +2627,17 @@ function ProcesarPendientesRespuesta(string $sessionID)
         $i = 1;
         Bitacora($sessionID, "*******************PROCESAMIENTO DOCUMENTOS PENDIENTES DE RESPUESTA*****************");
         foreach ($result as $doc) {
-            SetEnProceso($sessionID, 'SI');
-            Bitacora($sessionID, "Procesando documento   " . $doc["NUMERO_DOC"] . "( $i de $total_documentos )", rtrim($doc["NUMERO_DOC"]), rtrim($doc["TIPO_DOC"]));
-            ConsultarDirecto($sessionID, rtrim($doc["NUMERO_DOC"]), rtrim($doc["TIPO_DOC"]));
+            $numero = rtrim((string)$doc["NUMERO_DOC"]);
+            $tipo = rtrim((string)$doc["TIPO_DOC"]);
+            try {
+                SetEnProceso($sessionID, 'SI');
+                Bitacora($sessionID, "Procesando documento   " . $numero . "( $i de $total_documentos )", $numero, $tipo);
+                ConsultarDirecto($sessionID, $numero, $tipo);
+            } catch (Throwable $ex) {
+                $msg = "Excepción al consultar respuesta de $numero: {$ex->getMessage()}({$ex->getLine()})";
+                Bitacora($sessionID, $msg, $numero, $tipo, "Error", true, "respuesta", "DOC_EXCEPCION");
+                bitacora_doc_fallo($sessionID, $numero, $tipo, 'DOC_EXCEPCION', $msg, 'respuesta', false);
+            }
             $i++;
         }
         Bitacora($sessionID, "TERMINA PROCESAMIENTO DE PENDIENTES");
@@ -2635,16 +2684,23 @@ function ProcesarPendientesEnvio(string $sessionID)
             bitacora_run_contar('pendientes', $total_documentos);
             $i = 1;
             foreach ($result as $doc) {
-                //Bitacora($sessionID, "", rtrim($doc["DOCUMENTO"]), rtrim($doc["TIPO_DOCUMENTO"]));
-                Bitacora($sessionID, "Procesando   " . $doc["DOCUMENTO"] . "( $i de $total_documentos )");
-                ProcesarDocumento($sessionID, rtrim($doc["DOCUMENTO"]), rtrim($doc["TIPO_DOCUMENTO"]));
+                $numero = rtrim((string)$doc["DOCUMENTO"]);
+                $tipo = rtrim((string)$doc["TIPO_DOCUMENTO"]);
+                try {
+                    Bitacora($sessionID, "Procesando   " . $numero . "( $i de $total_documentos )", $numero, $tipo);
+                    ProcesarDocumento($sessionID, $numero, $tipo);
+                } catch (Throwable $ex) {
+                    $msg = "Excepción al procesar $numero: {$ex->getMessage()}({$ex->getLine()})";
+                    Bitacora($sessionID, $msg, $numero, $tipo, "Error", true, "envio", "DOC_EXCEPCION");
+                    bitacora_doc_fallo($sessionID, $numero, $tipo, 'DOC_EXCEPCION', $msg, 'envio', true);
+                }
                 $i++;
-                //Bitacora($sessionID, "----------------------- TERMINA DOCUMENTO-------------------------------", rtrim($doc["DOCUMENTO"]),rtrim($doc["TIPO_DOCUMENTO"]) );
             }
             SetEnProceso($sessionID, 'NO');
         }
-    } catch (Exception $ex) {
-        Bitacora($sessionID, "ProcesarPendientesEnvio Error: {$ex->getMessage()}", "", "");
+    } catch (Throwable $ex) {
+        Bitacora($sessionID, "ProcesarPendientesEnvio Error: {$ex->getMessage()}", "", "", "Error", true, "envio", "ETAPA_ENVIO");
+        bitacora_run_etapa_error('envío');
     }
 }
 

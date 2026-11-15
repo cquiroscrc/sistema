@@ -249,10 +249,12 @@ function Bitacora(
             }
             if ($codigo === 'DOC_ENVIADO' || $codigo === 'DOC_RECIBIDO') {
                 bitacora_run_contar('enviados');
+                bitacora_alerta_reset_fallos($Documento, $TipoDoc);
             }
             if ($codigo === 'DOC_ACEPTADO') {
                 bitacora_run_contar('aceptados');
                 bitacora_alerta_desactivar('DOC_FECHA_FUTURA', $Documento, $TipoDoc);
+                bitacora_alerta_reset_fallos($Documento, $TipoDoc);
             }
             if ($codigo === 'DOC_RECHAZADO') {
                 bitacora_run_contar('rechazados');
@@ -298,14 +300,17 @@ function bitacora_run_cerrar(string $sessionID): void
     $motivos = $BITACORA_RUN['omitidos_motivo'] ?? [];
     $motTxt = $motivos ? (' (' . implode(', ', array_keys($motivos)) . ')') : '';
     $hhmm = date('H:i');
+    $etapas = $BITACORA_RUN['etapas_error'] ?? [];
+    $etTxt = $etapas ? (' (etapa ' . implode(', ', $etapas) . ')') : '';
     $texto = sprintf(
-        'Corrida %s · %d pendientes · %d enviados · %d omitidos%s · %d errores · %s',
+        'Corrida %s · %d pendientes · %d enviados · %d omitidos%s · %d errores%s · %s',
         $hhmm,
         (int)$BITACORA_RUN['pendientes'],
         (int)$BITACORA_RUN['enviados'],
         (int)$BITACORA_RUN['omitidos'],
         $motTxt,
         (int)$BITACORA_RUN['errores'],
+        $etTxt,
         $durTxt
     );
     $novedad = !empty($BITACORA_RUN['novedad'])
@@ -332,3 +337,223 @@ function bitacora_run_cerrar(string $sessionID): void
         @chmod(BITACORA_ESTADO_ARCHIVO, 0640);
     }
 }
+
+const BITACORA_MAX_FALLOS_DOC_DEF = 10;
+const BITACORA_MAX_FALLOS_CONF = '/var/lib/lospaticas/fe/sender.conf';
+const BITACORA_CODIGOS_FALLO_RESET = [
+    'DOC_FALLO', 'DOC_FALLOS_MAX', 'DOC_PROCESO_DETENIDO', 'DOC_EXCEPCION',
+    'MAIL_SIN_CLAVE', 'MAIL_SIN_DIR_PDF', 'MAIL_SIN_DIR_XML',
+];
+
+function bitacora_max_fallos_doc(?int $forzar = null): int
+{
+    static $n = null;
+    if ($forzar !== null) {
+        $n = max(1, min(100, $forzar));
+        return $n;
+    }
+    if ($n !== null) {
+        return $n;
+    }
+    $n = BITACORA_MAX_FALLOS_DOC_DEF;
+    if (function_exists('params_get')) {
+        $p = params_get('max_fallos_doc');
+        if ($p !== null && $p !== '' && ctype_digit((string)$p)) {
+            $v = (int)$p;
+            if ($v >= 1 && $v <= 100) {
+                $n = $v;
+                return $n;
+            }
+        }
+    }
+    if (is_readable(BITACORA_MAX_FALLOS_CONF)) {
+        foreach (file(BITACORA_MAX_FALLOS_CONF, FILE_IGNORE_NEW_LINES) ?: [] as $l) {
+            if (preg_match('/^MAX_FALLOS_DOC=(\d{1,3})\s*$/', $l, $m)) {
+                $v = (int)$m[1];
+                if ($v >= 1 && $v <= 100) {
+                    $n = $v;
+                }
+            }
+        }
+    }
+    return $n;
+}
+
+function bitacora_es_omitido_fecha_futura(string $codigo, string $mensaje = ''): bool
+{
+    if (in_array($codigo, ['DOC_FECHA_FUTURA', 'DOC_CLAVE_FECHA_FUTURA'], true)) {
+        return true;
+    }
+    return stripos($mensaje, 'fechafact') !== false || stripos($mensaje, 'posterior a hoy') !== false;
+}
+
+function bitacora_run_etapa_error(string $etapa): void
+{
+    global $BITACORA_RUN;
+    bitacora_run_contar('errores');
+    bitacora_run_novedad();
+    if (!is_array($BITACORA_RUN ?? null)) {
+        return;
+    }
+    $BITACORA_RUN['etapas_error'] = $BITACORA_RUN['etapas_error'] ?? [];
+    $BITACORA_RUN['etapas_error'][] = $etapa;
+}
+
+function bitacora_alerta_reset(string $codigo, string $documento, string $tipoDoc = ''): void
+{
+    global $dbConn;
+    if (!$dbConn || $codigo === '' || $documento === '') {
+        return;
+    }
+    try {
+        $dbConn->prepare('UPDATE dbo.BITACORA_ALERTA SET ACTIVA=0, VECES=0, ULTIMA_VEZ=SYSDATETIME() WHERE CLAVE=?')
+            ->execute([bitacora_alerta_clave($codigo, $documento, $tipoDoc)]);
+    } catch (Throwable $e) {
+        error_log('bitacora_alerta_reset: ' . $e->getMessage());
+    }
+}
+
+function bitacora_alerta_reset_fallos(string $documento, string $tipoDoc): void
+{
+    global $dbConn;
+    if (!$dbConn || $documento === '') {
+        return;
+    }
+    try {
+        $in = implode(',', array_fill(0, count(BITACORA_CODIGOS_FALLO_RESET), '?'));
+        $st = $dbConn->prepare("UPDATE dbo.BITACORA_ALERTA SET ACTIVA=0, VECES=0, ULTIMA_VEZ=SYSDATETIME()
+            WHERE RTRIM(ISNULL(DOCUMENTO,'')) = ? AND RTRIM(ISNULL(TIPO_DOCUMENTO,'')) = ? AND CODIGO IN ($in)");
+        $st->execute(array_merge([$documento, $tipoDoc], BITACORA_CODIGOS_FALLO_RESET));
+    } catch (Throwable $e) {
+        error_log('bitacora_alerta_reset_fallos: ' . $e->getMessage());
+    }
+}
+
+function bitacora_alerta_veces(string $codigo, string $documento, string $tipoDoc): int
+{
+    global $dbConn;
+    if (!$dbConn || $codigo === '' || $documento === '') {
+        return 0;
+    }
+    try {
+        $st = $dbConn->prepare('SELECT VECES, ACTIVA FROM dbo.BITACORA_ALERTA WHERE CLAVE=?');
+        $st->execute([bitacora_alerta_clave($codigo, $documento, $tipoDoc)]);
+        $r = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$r || !(int)$r['ACTIVA']) {
+            return 0;
+        }
+        return (int)$r['VECES'];
+    } catch (Throwable $e) {
+        return 0;
+    }
+}
+
+/** True si el correo de este documento ya alcanzó el tope y no debe reintentarse cada minuto. */
+function bitacora_correo_agotado(string $documento, string $tipoDoc): bool
+{
+    $max = bitacora_max_fallos_doc();
+    foreach (['MAIL_SIN_CLAVE', 'MAIL_SIN_DIR_PDF', 'MAIL_SIN_DIR_XML'] as $c) {
+        if (bitacora_alerta_veces($c, $documento, $tipoDoc) >= $max) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Marca ESTADO=error (ENVIADO=N) para sacarlo de la cola, solo si no está enviado/aceptado/rechazado
+ * y no es fecha futura. Inserta una fila mínima si aún no existe. No toca XML ni claves.
+ */
+function bitacora_marcar_error_envio(string $documento, string $tipoDoc, string $motivo): bool
+{
+    global $dbConn;
+    if (!$dbConn || $documento === '' || $tipoDoc === '') {
+        return false;
+    }
+    $motivo = mb_substr($motivo, 0, 500);
+    try {
+        $st = $dbConn->prepare('SELECT RTRIM(ISNULL(ENVIADO,\'N\')) ENVIADO, RTRIM(ISNULL(ACEPTADO,\'N\')) ACEPTADO, RTRIM(ISNULL(ESTADO,\'\')) ESTADO
+            FROM dbo.DOC_ELECTRONICO_PROCESADO WHERE NUMERO_DOC=? AND TIPO_DOC=?');
+        $st->execute([$documento, $tipoDoc]);
+        $r = $st->fetch(PDO::FETCH_ASSOC);
+        if ($r) {
+            $e = strtolower(trim((string)$r['ESTADO']));
+            if ($r['ENVIADO'] === 'S' || $r['ACEPTADO'] === 'S' || str_starts_with($e, 'aceptado') || $e === 'rechazado') {
+                return false;
+            }
+            $u = $dbConn->prepare("UPDATE dbo.DOC_ELECTRONICO_PROCESADO
+                SET ESTADO='error', ENVIADO='N', ERROR_LOCAL='S', ERROR_HACIENDA='N', ULTIMO_ERROR=?
+                WHERE NUMERO_DOC=? AND TIPO_DOC=?
+                  AND ISNULL(ENVIADO,'N')<>'S' AND ISNULL(ACEPTADO,'N')<>'S'
+                  AND RTRIM(ISNULL(ESTADO,'')) NOT IN ('rechazado')
+                  AND RTRIM(ISNULL(ESTADO,'')) NOT LIKE 'aceptado%'");
+            $u->execute([$motivo, $documento, $tipoDoc]);
+            return $u->rowCount() > 0;
+        }
+        $ins = $dbConn->prepare("INSERT INTO dbo.DOC_ELECTRONICO_PROCESADO
+            (TIPO_DOC, NUMERO_DOC, NIT_EMISOR, GLN_EMISOR, NIT_RECEPTOR, GLN_RECEPTOR,
+             ENVIADO, ACEPTADO, ESTADO, ERROR_LOCAL, ERROR_HACIENDA, ULTIMO_ERROR, EMAIL_ENVIADO)
+            SELECT RTRIM(v.TIPO_DOCUMENTO), RTRIM(v.DOCUMENTO),
+                   LEFT(ISNULL(RTRIM(c.NIT),''),40), LEFT(ISNULL(RTRIM(c.GLN),''),13),
+                   LEFT(ISNULL(RTRIM(v.NIT),''),40), LEFT(ISNULL(RTRIM(v.GLN),''),13),
+                   'N', 'N', 'error', 'S', 'N', ?, 'NO'
+            FROM dbo.V_DOCUMENTO_ELECTRONICO v
+            CROSS JOIN (SELECT TOP 1 NIT, GLN FROM dbo.[COMPAÑIAS] WHERE CONFIGURADA='SI') c
+            WHERE RTRIM(v.DOCUMENTO)=? AND RTRIM(v.TIPO_DOCUMENTO)=?
+              AND NOT EXISTS (
+                  SELECT 1 FROM dbo.DOC_ELECTRONICO_PROCESADO p
+                  WHERE p.NUMERO_DOC=RTRIM(v.DOCUMENTO) AND p.TIPO_DOC=RTRIM(v.TIPO_DOCUMENTO)
+              )");
+        $ins->execute([$motivo, $documento, $tipoDoc]);
+        return $ins->rowCount() > 0;
+    } catch (Throwable $e) {
+        error_log('bitacora_marcar_error_envio: ' . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Registra un fallo de un documento (aviso deduplicado).
+ * Si $puedeMarcarError y alcanza el tope, lo saca de la cola con ESTADO=error (Reintentar lo devuelve).
+ * No aplica a fecha futura. No marca error si el documento ya fue enviado o aceptado.
+ * @return array{0:int,1:bool} [veces, capado]
+ */
+function bitacora_doc_fallo(
+    string $sessionID,
+    string $documento,
+    string $tipoDoc,
+    string $codigo,
+    string $mensaje,
+    string $componente = 'envio',
+    bool $puedeMarcarError = true
+): array {
+    if ($documento === '' || bitacora_es_omitido_fecha_futura($codigo, $mensaje)) {
+        return [0, false];
+    }
+    $max = bitacora_max_fallos_doc();
+    [$escribir, $veces] = bitacora_alerta_registrar($codigo, $mensaje, $documento, $tipoDoc);
+    if ($escribir && function_exists('Bitacora')) {
+        $texto = $mensaje;
+        if ($veces > 1) {
+            $texto .= " (intento $veces, último " . date('H:i') . ')';
+        }
+        Bitacora($sessionID, $texto, $documento, $tipoDoc, 'Warning', true, $componente, $codigo);
+    }
+
+    $capado = false;
+    if ($puedeMarcarError) {
+        [, $seguidos] = bitacora_alerta_registrar('DOC_FALLO', $mensaje, $documento, $tipoDoc);
+        if ($seguidos >= $max) {
+            $msgCap = "Tras $max fallos seguidos se sacó de la cola de envío. Use Reintentar en el panel cuando esté corregido. Último error: $mensaje";
+            if (bitacora_marcar_error_envio($documento, $tipoDoc, $msgCap)) {
+                $capado = true;
+                bitacora_alerta_registrar('DOC_FALLOS_MAX', $msgCap, $documento, $tipoDoc);
+                if (function_exists('Bitacora')) {
+                    Bitacora($sessionID, $msgCap, $documento, $tipoDoc, 'Error', true, $componente, 'DOC_FALLOS_MAX');
+                }
+            }
+        }
+    }
+    return [$veces, $capado];
+}
+

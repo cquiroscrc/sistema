@@ -64,7 +64,7 @@ function ph_reintento_regla(array $r): array
     }
     if ($acep) return [false, 'Marcado como aceptado'];
     if ($e !== 'error') return [false, 'Ya está en la cola de envío' . ($e !== '' ? " (estado $e)" : '')];
-    return [true, 'Error local sin enviar: se puede devolver a la cola de envío'];
+    return [true, 'Error local sin enviar (incluye el tope de fallos seguidos): se puede devolver a la cola de envío'];
 }
 
 /** Regla completa: además verifica la vista de la cola y que el servicio esté activo. */
@@ -78,6 +78,20 @@ function ph_reintento(array $r, string $num): array
 }
 
 /** POST tipo, numero [, validar=1]. Idempotente: UPDATE condicionado a ESTADO 'error'; no inserta filas. */
+
+/** Al devolver un documento a la cola, reinicia el contador de fallos seguidos y oculta el aviso de tope. */
+function ph_alerta_reset_fallos(string $tipo, string $num): void
+{
+    try {
+        ph_db()->prepare("UPDATE dbo.BITACORA_ALERTA SET ACTIVA=0, VECES=0, ULTIMA_VEZ=SYSDATETIME()
+            WHERE RTRIM(ISNULL(DOCUMENTO,'')) = ? AND RTRIM(ISNULL(TIPO_DOCUMENTO,'')) = ?
+              AND CODIGO IN ('DOC_FALLO','DOC_FALLOS_MAX','DOC_PROCESO_DETENIDO','DOC_EXCEPCION','MAIL_SIN_CLAVE','MAIL_SIN_DIR_PDF','MAIL_SIN_DIR_XML')")
+            ->execute([$num, $tipo]);
+    } catch (Throwable $e) {
+        // no impedir el reintento si falla el aviso
+    }
+}
+
 function api_reintentar(): array
 {
     $tipo = (string)($_POST['tipo'] ?? ''); $num = trim((string)($_POST['numero'] ?? ''));
@@ -98,6 +112,7 @@ function api_reintentar(): array
     $u->execute(['[Reintento solicitado en panel por ' . ph_user() . ' ' . date('Y-m-d H:i:s') . '] ', $tipo, $num]);
     $n = $u->rowCount();
     if ($n === 1) {
+        ph_alerta_reset_fallos($tipo, $num);
         ph_accion("reintento solicitado $tipo $num: devuelto a la cola de envío (ESTADO error -> reintentar)", 'Info', $num, $tipo);
         return ['ok' => true, 'mensaje' => "$tipo $num devuelto a la cola de envío; lo enviará el próximo lote"];
     }
