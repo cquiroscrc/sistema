@@ -5,6 +5,8 @@ define('DOC_ROOT', dirname(__FILE__, 4));
 
 global $continuar;
 
+require_once __DIR__ . '/bitacora-lib.php';
+
 
 if (PHP_SAPI === 'cli') {
     include_once DOC_ROOT . "/www/settings.php";    
@@ -93,89 +95,7 @@ function corregirEncodingUtf8(string $texto): string
     return $texto;
 }
 
-function Bitacora(
-    string $sessionID,
-    string $Texto,
-    string $Documento = "",
-    string $TipoDoc = "",
-    string $nivel = "Debug",
-    bool $mostrarConsola = true
-): bool {
-
-    // Validación de parámetros obligatorios
-    if (empty($sessionID) || empty($Texto)) {
-        return false;
-    }
-
-    // Niveles válidos
-    $nivelesValidos = ['Debug', 'Info', 'Warning', 'Error'];
-    if (!in_array($nivel, $nivelesValidos)) {
-        $nivel = 'Debug';
-    }
-
-    try {
-        global $dbConn;
-
-        // Truncar texto si es muy largo (evitar errores de BD)
-        $textoLimitado = mb_substr(normalizarTextoBitacora($Texto), 0, 4000);
-
-        // Mostrar en consola si es CLI y está habilitado
-        if ($mostrarConsola && PHP_SAPI === 'cli') {
-            $timestamp = date('d/m/Y H:i:s');
-            $docInfo = !empty($Documento) ? "|$Documento|" : "";
-            echo "[$timestamp] [$nivel] $docInfo $textoLimitado\n";
-        }
-
-        // Validar conexión a BD antes de intentar insertar
-        if (!$dbConn) {
-            error_log("Bitacora: No hay conexión a BD - SessionID: $sessionID, Texto: $textoLimitado");
-            return false;
-        }
-
-        $sql = "INSERT INTO dbo.BITACORA(SESSION_ID, TIPO, TEXTO, FECHA_HORA, DOCUMENTO, TIPO_DOCUMENTO)
-                VALUES(:sessionID, :Tipo, :Texto, SYSDATETIME(), :Documento, :TipoDoc)";
-
-        $stm = $dbConn->prepare($sql);
-
-        $resultado = $stm->execute([
-            ':sessionID' => $sessionID,
-            ':Tipo' => $nivel,
-            ':Texto' => $textoLimitado,
-            ':Documento' => $Documento,
-            ':TipoDoc' => $TipoDoc
-        ]);
-
-        return $resultado;
-
-    } catch (PDOException $ex) {
-        $errorMsg = "Bitacora PDO Error: {$ex->getMessage()} - SessionID: $sessionID, Documento: $Documento, Tipo: $TipoDoc";
-
-        // Mostrar en consola si es CLI
-        if (PHP_SAPI === 'cli') {
-            echo "[" . date('d/m/Y H:i:s') . "] [ERROR] $errorMsg\n";
-        }
-
-        // Log de sistema como respaldo
-        error_log($errorMsg);
-        grace_debug($errorMsg);
-
-        return false;
-
-    } catch (Exception $ex) {
-        $errorMsg = "Bitacora General Error: {$ex->getMessage()} - SessionID: $sessionID";
-
-        if (PHP_SAPI === 'cli') {
-            echo "[" . date('d/m/Y H:i:s') . "] [ERROR] $errorMsg\n";
-        }
-
-        error_log($errorMsg);
-        return false;
-    }
-}
-/**
- * Generates a user hash (for passwords mostly)
- * @todo Use php's function
- */
+/* Bitacora() vive en bitacora-lib.php */
 function module_info()
 {
     return array(
@@ -589,7 +509,21 @@ function validarFechasAntesDeProcesar(string $sessionID, string $Documento, stri
 
 function registrarDocumentoNoEnviado(string $sessionID, string $Documento, string $TipoDoc, string $motivo): void
 {
-    Bitacora($sessionID, $motivo, $Documento, $TipoDoc, "Warning");
+    $codigo = 'DOC_NO_ENVIADO';
+    $motivoCorto = 'no enviado';
+    if (stripos($motivo, 'fechafact') !== false || stripos($motivo, 'posterior a hoy') !== false) {
+        $codigo = (stripos($motivo, 'clave SAT') !== false) ? 'DOC_CLAVE_FECHA_FUTURA' : 'DOC_FECHA_FUTURA';
+        $motivoCorto = 'fecha futura';
+    }
+    bitacora_run_contar('omitidos', 1, $motivoCorto);
+    [$escribir, $veces] = bitacora_alerta_registrar($codigo, $motivo, $Documento, $TipoDoc);
+    if ($escribir) {
+        $texto = $motivo;
+        if ($veces > 1) {
+            $texto .= " (omitido $veces veces, último intento " . date('H:i') . ')';
+        }
+        Bitacora($sessionID, $texto, $Documento, $TipoDoc, "Warning", true, "envio", $codigo);
+    }
 
     try {
         global $dbConn;
@@ -2249,17 +2183,20 @@ function CargarConfiguraciones($sessionID)
 function Iniciar()
 {
     date_default_timezone_set('America/Costa_Rica');
+    bitacora_run_iniciar();
 
     $sessionID = getSessionID();
     CargarConfiguraciones($sessionID);
 
     if (EnProceso($sessionID) == true) {
-        Bitacora($sessionID, "El proceso ya fue iniciado desde otra instancia, esta bloqueado y no se permite mas de un proceso...salimos", "", "");
+        Bitacora($sessionID, "El proceso ya fue iniciado desde otra instancia, esta bloqueado y no se permite mas de un proceso...salimos", "", "", "Warning", true, "envio", "RUN_BLOQUEADO");
+        bitacora_run_cerrar($sessionID);
         return;
     }
 
     try {
         if (!TestCertificateDates($sessionID)) {
+            bitacora_run_cerrar($sessionID);
             return;
         }
 
@@ -2270,9 +2207,10 @@ function Iniciar()
         CloseTokenSession($sessionID);
 
     } catch (Exception $ex) {
-        Bitacora($sessionID, $ex->getMessage(), "", "");
+        Bitacora($sessionID, $ex->getMessage(), "", "", "Error", true, "envio", "ERROR");
         SetEnProceso($sessionID, "NO");
     }
+    bitacora_run_cerrar($sessionID);
 
 }
 function CloseTokenSession($sessionID)
@@ -2692,8 +2630,9 @@ function ProcesarPendientesEnvio(string $sessionID)
             Bitacora($sessionID, "No se encontraron nuevos documentos para procesar");
             return;
         } else {
-            Bitacora($sessionID, "*******************PROCESAMIENTO DOCUMENTOS NUEVOS*****************");
+            Bitacora($sessionID, "*******************PROCESAMIENTO DOCUMENTOS NUEVOS*****************", "", "", "Debug", true, "envio", "RUN_BANNER");
             $total_documentos = count($result);
+            bitacora_run_contar('pendientes', $total_documentos);
             $i = 1;
             foreach ($result as $doc) {
                 //Bitacora($sessionID, "", rtrim($doc["DOCUMENTO"]), rtrim($doc["TIPO_DOCUMENTO"]));
