@@ -283,7 +283,9 @@ function ph_respaldo_descargar(): never
 
 /* ---------------- Cierre de caja: destinatarios del correo ---------------- */
 const PH_CAJA_CFG = PH_DATA . '/caja-destinatarios.json';
-const PH_CAJA_DEFECTO = ['hhernandezv@lospaticas.com'];
+// Desactivado: destinatarios solo desde Configuración del panel (Carlos 2026-11-14)
+// const PH_CAJA_DEFECTO = ['hhernandezv@lospaticas.com'];
+const PH_CAJA_DEFECTO = [];
 
 function ph_caja_destinatarios(): array
 {
