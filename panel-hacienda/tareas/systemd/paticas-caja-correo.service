@@ -1,5 +1,5 @@
 [Unit]
-Description=Los Paticas - cierre de caja por correo (utilitarios/caja_correo.php)
+Description=Los Paticas - cierre de caja por correo (panel-hacienda/correo/caja-cierre.php)
 After=network-online.target
 Wants=network-online.target
 
@@ -11,7 +11,9 @@ UMask=0027
 StandardOutput=append:/var/log/lospaticas/caja-correo.log
 StandardError=append:/var/log/lospaticas/caja-correo.log
 # Solo el texto del resultado (sin HTML); pipefail conserva el codigo de salida de curl.
-ExecStart=/bin/bash -o pipefail -c '/usr/bin/curl -sS -L --max-redirs 3 --max-time 180 http://127.0.0.1/utilitarios/caja_correo.php | /usr/local/sbin/paticas-solo-texto'
+# Formato nuevo + SMTP del panel (antes: curl a utilitarios/caja_correo.php -> lospaticas.com/cierres.php -> mail()).
+ExecStart=/bin/bash -o pipefail -c '/usr/bin/php8.5 /var/www/lospaticas/sistema/panel-hacienda/correo/caja-cierre.php 2>&1 | /usr/local/sbin/paticas-solo-texto'
+TimeoutStartSec=5min
 Nice=5
 NoNewPrivileges=yes
 PrivateTmp=yes

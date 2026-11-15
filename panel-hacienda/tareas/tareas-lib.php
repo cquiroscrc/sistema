@@ -5,7 +5,7 @@ declare(strict_types=1);
 function ph_tareas_defs(): array
 {
     return [
-        ['id' => 'caja_correo', 'nombre' => 'Cierre de caja (correo)', 'descripcion' => 'utilitarios/caja_correo.php · lee hfacturas/cxc/egresos/bancos y redirige a cierres.php para enviar el correo', 'hora' => '17:15', 'servidor' => 'pat-php-app01 (.106)'],
+        ['id' => 'caja_correo', 'nombre' => 'Cierre de caja (correo)', 'descripcion' => 'panel-hacienda/correo/caja-cierre.php · formato nuevo (caja_correo_nuevo.php), solo lectura de hfacturas/cxc/egresos/bancos; envía por el SMTP de Configuración → Correo a los destinatarios configurados', 'hora' => '17:15', 'servidor' => 'pat-php-app01 (.106)'],
         ['id' => 'mensajeria_update', 'nombre' => 'Actualizar mensajería', 'descripcion' => 'utilitarios/mensajeria_update.php · restablece existencias de códigos 9SM, 9ENCOMIENDA, 9IMPRESIONZL, 9SERVDIGITALZL y 9TM', 'hora' => '17:28', 'servidor' => 'pat-php-app01 (.106)'],
         ['id' => 'prefacturas_update', 'nombre' => 'Limpiar prefacturas', 'descripcion' => 'utilitarios/prefacturas_update.php · DELETE de hprefacturas, hpregeneral y tmp_devol', 'hora' => '17:48', 'servidor' => 'pat-php-app01 (.106)'],
         ['id' => 'actividades_comerciales', 'nombre' => 'Actividades comerciales', 'descripcion' => 'web_paticas_v2/FacturaElectronica/Utils/ActualizadorActividadComercial.php · actualiza las actividades comerciales desde Hacienda (flock: si la corrida anterior sigue, se omite; tope 4 min)', 'hora' => 'cada 5 min', 'servidor' => 'pat-php-app01 (.106)'],
