@@ -127,15 +127,20 @@ export default function Registro() {
     return out;
   }, [rows, f.src]);
 
+  // Columnas fijas para que fecha, nivel, componente, código y documento queden alineados (también en filas viejas sin esos campos).
+  const logGrid = 'grid min-w-[72rem] grid-cols-[1.25rem_10.5rem_4.75rem_6.5rem_11.5rem_16.5rem_minmax(12rem,1fr)] items-start gap-x-3 px-4 py-1';
+  const celda = 'min-w-0 truncate';
   const Linea = ({ r }: { r: LogRow & { nuevo?: boolean } }) => (
-    <div className={cn('flex gap-3 border-b border-white/[.04] px-4 py-1 hover:bg-white/[.03]', r.nuevo && 'animate-in bg-teal-500/[.07]')}>
-      <span className="shrink-0 text-slate-500 tabular-nums">{fmtHora(r.f)}</span>
-      <span className={cn('h-fit shrink-0 rounded px-1.5 text-[11px] font-semibold uppercase', nivelCls[r.nivel] || nivelCls.Debug)}>{r.nivel}</span>
-      {r.componente && <span className="shrink-0 text-slate-400">{r.componente}</span>}
-      {r.codigo && <span className="shrink-0 font-mono text-[11px] text-slate-500">{r.codigo}</span>}
-      {r.doc && <button type="button" className="shrink-0 text-cyan-300 hover:underline" onClick={() => abrirDoc(r)}>{r.doc}</button>}
-      {r.hist && <span className="shrink-0 rounded bg-white/10 px-1 text-[10px] uppercase text-slate-400">hist</span>}
-      <span className={cn('whitespace-pre-wrap break-words', r.nivel === 'Error' && 'text-red-300', r.nivel === 'Warning' && 'text-amber-200')}>{r.texto}</span>
+    <div className={cn(logGrid, 'border-b border-white/[.04] hover:bg-white/[.03]', r.nuevo && 'animate-in bg-teal-500/[.07]')}>
+      <span aria-hidden="true" />
+      <span className="whitespace-nowrap text-slate-500 tabular-nums">{fmtHora(r.f)}</span>
+      <span className="min-w-0">{r.nivel ? <span className={cn('inline-block rounded px-1.5 text-[11px] font-semibold uppercase', nivelCls[r.nivel] || nivelCls.Debug)}>{r.nivel}</span> : <span className="inline-block min-h-[1.1em]">&nbsp;</span>}</span>
+      <span className={cn(celda, 'text-slate-400')}>{r.componente || ' '}</span>
+      <span className={cn(celda, 'font-mono text-[11px] text-slate-500')}>{r.codigo || ' '}</span>
+      <span className={cn(celda, 'font-mono text-cyan-300')}>
+        {r.doc ? <button type="button" className="truncate hover:underline" onClick={() => abrirDoc(r)}>{r.doc}{r.hist ? ' · hist' : ''}</button> : ' '}
+      </span>
+      <span className={cn('min-w-0 whitespace-pre-wrap break-words', r.nivel === 'Error' && 'text-red-300', r.nivel === 'Warning' && 'text-amber-200')}>{r.texto || ' '}</span>
     </div>
   );
 
@@ -175,18 +180,21 @@ export default function Registro() {
           <Button size="sm" variant="ghost" onClick={abajo} title="Ir al final"><ArrowDownToLine className="h-3.5 w-3.5" /></Button>
           <Button size="sm" variant="ghost" onClick={() => setRows([])} title="Limpiar vista"><Trash2 className="h-3.5 w-3.5" /></Button></div>
       </div>
-      <div ref={caja} className="h-[62vh] overflow-y-auto bg-[hsl(222_40%_6%)] font-mono text-[12.5px] leading-relaxed text-slate-200 scrollbar-thin">
+      <div ref={caja} className="h-[62vh] overflow-auto bg-[hsl(222_40%_6%)] font-mono text-[12.5px] leading-relaxed text-slate-200 scrollbar-thin">
         {cur.current.mas && <div className="p-2 text-center"><Button size="sm" variant="outline" className="border-white/10 bg-white/5 text-slate-200 hover:bg-white/10" onClick={anteriores}><ChevronsUp className="h-3.5 w-3.5" />Cargar anteriores</Button></div>}
         {!rows.length && <div className="p-8 text-center text-slate-500">Sin registros para el filtro.</div>}
         {grupos.map(g => {
           const hayGrupo = esBd(f.src) && !!g.run;
           const abierto = !cerrados[g.key];
           return <div key={g.key}>
-            {hayGrupo && <button type="button" className="flex w-full items-center gap-2 border-b border-white/10 bg-white/[.04] px-4 py-1.5 text-left text-[12px] text-slate-300 hover:bg-white/[.07]" onClick={() => setCerrados(s => ({ ...s, [g.key]: !s[g.key] }))}>
-              {abierto ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-              <span className="font-medium">{g.label || g.run}</span>
-              <span className="text-slate-500">{g.items.length} línea{g.items.length === 1 ? '' : 's'}</span>
-              <span className="ml-auto font-mono text-[10px] text-slate-500">{g.run}</span>
+            {hayGrupo && <button type="button" className={cn(logGrid, 'w-full border-b border-white/10 bg-white/[.04] py-1.5 text-left text-[12px] text-slate-300 hover:bg-white/[.07]')} onClick={() => setCerrados(s => ({ ...s, [g.key]: !s[g.key] }))}>
+              <span className="flex h-full items-center text-slate-400">{abierto ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}</span>
+              <span className="whitespace-nowrap text-slate-500 tabular-nums">{fmtHora(g.items[0]?.f || '')}</span>
+              <span className="min-w-0"><span className="inline-block rounded px-1.5 text-[11px] font-semibold uppercase text-info bg-info/10">Corrida</span></span>
+              <span className="min-w-0 truncate text-slate-400">{' '}</span>
+              <span className="min-w-0 truncate font-mono text-[11px] text-slate-500">{' '}</span>
+              <span className="min-w-0 truncate font-mono text-slate-500">{g.items.length} línea{g.items.length === 1 ? '' : 's'}</span>
+              <span className="min-w-0 whitespace-pre-wrap break-words text-left text-slate-300"><span className="font-medium">{g.label || 'Corrida'}</span> <span className="font-mono text-[10px] text-slate-500">{g.run}</span></span>
             </button>}
             {(!hayGrupo || abierto) && g.items.map((r, i) => <Linea key={g.key + i} r={r} />)}
           </div>;
