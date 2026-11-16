@@ -173,7 +173,7 @@ function  ImprimirEncabezados($sessionID, $Documento, $TipoDocumento,$result){
         $ph=$this->GetPageHeight()-4;
 
         // logo : 184 de ancho et 120 de altp
-        $this->Image(__DIR__ . '\LogoPaticas-small.png', 3, 4, 50, 37);
+        $this->Image(__DIR__ . '/LogoPaticas-small.png', 3, 4, 50, 37);
         $this->SetXY(110, 5);
         $this->SetFont("Arial", "B", 9);
 
