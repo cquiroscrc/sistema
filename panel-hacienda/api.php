@@ -147,7 +147,8 @@ function api_logs(): array
         if (!$desde && $since === null && $before === null && $texto !== '') { $w[] = 'FECHA_HORA >= DATEADD(day, -7, GETDATE())'; }
         if ($nivel === 'avisos') { $w[] = "TIPO IN ('Warning','Error')"; }
         elseif ($nivel) { $w[] = 'TIPO = ?'; $p[] = $nivel; }
-        if ($doc !== '') { $w[] = 'DOCUMENTO LIKE ?'; $p[] = '%' . $doc . '%'; }
+        // Documento: con formato "F-000..." se busca por prefijo (usa los indices por DOCUMENTO); otro texto busca "contiene" (recorre la tabla).
+        if ($doc !== '') { $w[] = 'DOCUMENTO LIKE ?'; $p[] = (preg_match('/^[A-Za-z]{1,3}-\d+$/', $doc) ? '' : '%') . strtr($doc, ['[' => '[[]', '%' => '[%]', '_' => '[_]']) . '%'; }
         if ($texto !== '') { $w[] = 'TEXTO LIKE ?'; $p[] = '%' . $texto . '%'; }
         if ($componente !== '') { $w[] = 'COMPONENTE = ?'; $p[] = $componente; }
         if ($codigo !== '') { $w[] = 'CODIGO = ?'; $p[] = $codigo; }
@@ -174,23 +175,29 @@ function api_logs(): array
                 [$t1, $h1, $x1, $t2, $h2, $x2] = $oDir === 'DESC' ? ['dbo.BITACORA', 0, '', 'dbo.BITACORA_HIST', 1, $hint0] : ['dbo.BITACORA_HIST', 1, $hint0, 'dbo.BITACORA', 0, ''];
                 $c = ph_db()->prepare("SELECT COUNT_BIG(*) FROM $t1 $where"); $c->execute($p); $cb = (int)$c->fetchColumn();
                 $res = [];
+                // "Error y Warning" en el historico: dos busquedas por el indice (TIPO, FECHA_HORA) unidas, en vez de IN (que obliga a ordenar millones de filas).
+                $histSql = function (string $tabla, string $hint, int $h, int $offX, int $cant) use ($cols, $where, $nivel, $oDir): string {
+                    if ($nivel !== 'avisos' || $tabla !== 'dbo.BITACORA_HIST') return "SELECT $cols, $h AS hist FROM $tabla$hint $where ORDER BY FECHA_HORA $oDir OFFSET $offX ROWS FETCH NEXT $cant ROWS ONLY";
+                    $k = $offX + $cant; $in = "TIPO IN ('Warning','Error')";
+                    $w1 = str_replace($in, "TIPO = 'Warning'", $where); $w2 = str_replace($in, "TIPO = 'Error'", $where);
+                    return "SELECT * FROM (SELECT * FROM (SELECT TOP $k $cols, $h AS hist FROM $tabla $w1 ORDER BY FECHA_HORA $oDir) a UNION ALL SELECT * FROM (SELECT TOP $k $cols, $h AS hist FROM $tabla $w2 ORDER BY FECHA_HORA $oDir) b) u ORDER BY f $oDir OFFSET $offX ROWS FETCH NEXT $cant ROWS ONLY";
+                };
+                $pp = fn(string $tabla) => ($nivel === 'avisos' && $tabla === 'dbo.BITACORA_HIST') ? array_merge($p, $p) : $p;
                 if ($off < $cb) {
-                    $st = ph_db()->prepare("SELECT $cols, $h1 AS hist FROM $t1$x1 $where ORDER BY FECHA_HORA $oDir OFFSET $off ROWS FETCH NEXT $n ROWS ONLY");
-                    $st->execute($p); $res = $st->fetchAll(PDO::FETCH_ASSOC);
+                    $st = ph_db()->prepare($histSql($t1, $x1, $h1, $off, $n));
+                    $st->execute($pp($t1)); $res = $st->fetchAll(PDO::FETCH_ASSOC);
                 }
                 $faltan = $n - count($res);
                 if ($faltan > 0 && $oDir === 'ASC') {
-                    $st = ph_db()->prepare("SELECT $cols, $h2 AS hist FROM $t2$x2 $where ORDER BY FECHA_HORA ASC OFFSET " . max(0, $off - $cb) . " ROWS FETCH NEXT $faltan ROWS ONLY");
-                    $st->execute($p); $res = array_merge($res, $st->fetchAll(PDO::FETCH_ASSOC));
+                    $st = ph_db()->prepare($histSql($t2, $x2, $h2, max(0, $off - $cb), $faltan));
+                    $st->execute($pp($t2)); $res = array_merge($res, $st->fetchAll(PDO::FETCH_ASSOC));
                     $faltan = 0;
                 }
                 if ($faltan > 0) {
                     $offH = max(0, $off - $cb);
-                    // Heap de 22M filas casi todo Debug: solo sin filtro de nivel (vista Diagnostico) se fuerza el indice de FECHA_HORA
-                    // (recorrido hacia atras); con filtros de nivel/texto/documento/etc. decide el optimizador (puede tardar varios segundos).
-                    $hint = $hint0;
-                    $st = ph_db()->prepare("SELECT $cols, 1 AS hist FROM dbo.BITACORA_HIST$hint $where ORDER BY FECHA_HORA DESC OFFSET $offH ROWS FETCH NEXT $faltan ROWS ONLY");
-                    $st->execute($p); $res = array_merge($res, $st->fetchAll(PDO::FETCH_ASSOC));
+                    // Sin filtro de nivel se fuerza el indice de FECHA_HORA (heap de 22M filas); con nivel usa IX_BITACORA_HIST_TIPO_FECHA.
+                    $st = ph_db()->prepare($histSql('dbo.BITACORA_HIST', $hint0, 1, $offH, $faltan));
+                    $st->execute($pp('dbo.BITACORA_HIST')); $res = array_merge($res, $st->fetchAll(PDO::FETCH_ASSOC));
                 }
                 $st = new ArrayIterator($res);
             } else {
