@@ -53,6 +53,7 @@ export interface Status {
   ok: boolean; ahora: string; usuario: string; servicio_activo: boolean; buzon?: 'activo' | 'inactivo' | 'error';
   timer: Record<string, string>; servicio: Record<string, string>;
   bd: { host: string; database: string; restaurada: string | null };
+  version?: string;
   ultima_bitacora: string; ultimo_documento: string;
   conteos: { error: number; reintentar: number; pendiente_respuesta: number; rechazado_hoy: number; aceptado_hoy: number; enviados_hoy: number; cola: number };
 }

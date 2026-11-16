@@ -108,7 +108,6 @@ export default function App() {
         <button className="lg:hidden" onClick={() => setMenu(true)} aria-label="Menú"><Menu className="h-5 w-5" /></button>
         <h1 className="text-base font-semibold">{titulo}</h1>
         <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
-          {status && <span className="hidden md:inline">BD <b className="text-foreground">{status.bd.database}</b> @ {status.bd.host}{status.bd.restaurada && <> · restaurada {status.bd.restaurada}</>}</span>}
           <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium ring-1 ring-inset', activo ? 'bg-success/10 text-success ring-success/30' : 'bg-muted text-muted-foreground ring-border')}>
             <span className={cn('h-1.5 w-1.5 rounded-full', activo ? 'bg-success animate-pulse' : 'bg-muted-foreground')} />{activo ? 'Envío activo' : 'Envío detenido'}</span>
           <button onClick={tema} className="rounded-md p-2 hover:bg-muted" aria-label="Tema">{oscuro ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</button>
@@ -127,6 +126,11 @@ export default function App() {
           {vista.startsWith('configuracion') && <Configuracion tab={pestanaDe(vista)} onTab={t => ir(t === 'correo' ? 'configuracion' : `configuracion/${t}` as Vista)} />}
         </ErrorBoundary>
       </main>
+      {/* Pie discreto al final de la pagina (no fijo: no tapa las barras de paginacion sticky) */}
+      <footer className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t px-4 py-2 text-[11px] text-muted-foreground lg:px-8">
+        <span>{status ? <>BD <b className="font-medium text-foreground/80">{status.bd.database}</b> @ {status.bd.host}</> : '\u00a0'}</span>
+        {status?.version && <span className="font-mono" title="Fecha del último cambio de código (hora de Costa Rica)">{status.version}</span>}
+      </footer>
     </div>
   </div>;
 }

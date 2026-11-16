@@ -167,7 +167,7 @@ export default function Tareas({ onCambio }: { onCambio?: () => void }) {
   const dato = (k: string, v: React.ReactNode) => <div className="min-w-0"><div className="text-xs text-muted-foreground">{k}</div><div className="mt-0.5 text-sm font-medium">{v || '—'}</div></div>;
   const esperado = modal ? PALABRA[modal.acc] : '';
   const t = items ? (items.find(x => x.id === tab) ?? items[0]) : null;
-  return <div className="flex h-[calc(100dvh-8.5rem)] min-h-[36rem] flex-col gap-4">
+  return <div className="flex h-[calc(100dvh-10.75rem)] min-h-[36rem] flex-col gap-4">
     <div role="tablist" aria-label="Tareas programadas" className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
       {(items ?? []).map(x => <button key={x.id} role="tab" type="button" aria-selected={t?.id === x.id} onClick={() => elegir(x.id)}
         className={cn('inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',

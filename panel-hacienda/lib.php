@@ -381,3 +381,28 @@ function ph_dedata_file(?string $dbPath, ?string $fechaTimbrado, string $name): 
     }
     return null;
 }
+
+/**
+ * Version del codigo = fecha del ultimo commit del repo sistema, "vAAAA-MM-DD-HH-MM" hora de Costa Rica.
+ * Se cachea en PH_DATA/version.json con la marca de .git/logs/HEAD (cambia en cada commit): git solo corre tras un commit nuevo.
+ * Respaldo: la marca de tiempo de la ultima linea del reflog.
+ */
+function ph_version(): string
+{
+    $git = dirname(__DIR__) . '/.git';
+    $ref = is_file("$git/logs/HEAD") ? "$git/logs/HEAD" : "$git/HEAD";
+    $clave = (string)@filemtime($ref) . ':' . (string)@filesize($ref);
+    $cache = PH_DATA . '/version.json';
+    $c = is_file($cache) ? json_decode((string)@file_get_contents($cache), true) : null;
+    if (!is_array($c) || ($c['clave'] ?? '') !== $clave) {
+        $ts = (int)trim((string)@shell_exec('git -C ' . escapeshellarg(dirname(__DIR__)) . ' log -1 --format=%ct 2>/dev/null'));
+        if ($ts <= 0 && is_file("$git/logs/HEAD")) {
+            $lineas = @file("$git/logs/HEAD", FILE_IGNORE_NEW_LINES) ?: [];
+            if (preg_match('/> (\d{9,}) [+-]\d{4}\t/', (string)end($lineas), $m)) $ts = (int)$m[1];
+        }
+        if ($ts <= 0) return '';
+        $c = ['clave' => $clave, 'ts' => $ts];
+        @file_put_contents($cache, json_encode($c), LOCK_EX);
+    }
+    return 'v' . (new DateTime('@' . (int)$c['ts']))->setTimezone(new DateTimeZone('America/Costa_Rica'))->format('Y-m-d-H-i');
+}

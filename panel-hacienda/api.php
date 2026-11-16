@@ -98,6 +98,7 @@ function api_status(): array
         'ok' => true,
         'ahora' => date('Y-m-d H:i:s'),
         'usuario' => ph_user(),
+        'version' => ph_version(),
         'servicio_activo' => ($t['ActiveState'] ?? '') === 'active',
         'buzon' => ph_buzon_semaforo(),
         'timer' => $t, 'servicio' => $s,
