@@ -43,14 +43,15 @@ const FIJA = 'sticky left-0 z-[1] -mr-3 pr-3';
 // Columnas redimensionables (px). Se guardan en localStorage; doble clic en el borde restablece la columna.
 type ColId = 'fecha' | 'nivel' | 'componente' | 'codigo' | 'documento' | 'mensaje';
 const COLS: { id: ColId; label: string; def: number; min: number }[] = [
-  { id: 'fecha', label: 'Fecha / hora', def: 168, min: 120 },
-  { id: 'nivel', label: 'Nivel', def: 76, min: 56 },
-  { id: 'componente', label: 'Componente', def: 104, min: 60 },
-  { id: 'codigo', label: 'Código', def: 184, min: 70 },
-  { id: 'documento', label: 'Documento', def: 264, min: 90 },
-  { id: 'mensaje', label: 'Mensaje', def: 320, min: 160 },
+  // Anchos ajustados al contenido tipico; Mensaje se queda con el resto (minmax(min, 1fr)).
+  { id: 'fecha', label: 'Fecha / hora', def: 142, min: 110 },     // "16/11/2026 10:48:25"
+  { id: 'nivel', label: 'Nivel', def: 70, min: 50 },              // insignia "WARNING" + flecha de orden
+  { id: 'componente', label: 'Componente', def: 86, min: 50 },    // envio / token / buzon
+  { id: 'codigo', label: 'Código', def: 112, min: 60 },           // DOC_ENVIADO / RUN_RESUMEN
+  { id: 'documento', label: 'Documento', def: 150, min: 80 },     // "TE F-00000000153711"
+  { id: 'mensaje', label: 'Mensaje', def: 240, min: 160 },
 ];
-const ANCHOS_KEY = 'ph-logs-anchos';
+const ANCHOS_KEY = 'ph-logs-anchos-v2'; // v2: nuevos anchos por defecto para todos (se ignora lo guardado antes)
 const anchosDef = () => Object.fromEntries(COLS.map(c => [c.id, c.def])) as Record<ColId, number>;
 const leerAnchos = (): Record<ColId, number> => {
   const d = anchosDef();
@@ -188,10 +189,10 @@ export default function Registro() {
   const verAvisos = avisos.length > 0 && avisoOculto !== claveAvisos;
 
   // Columnas fijas para que fecha, nivel, componente, código y documento queden alineados (también en filas viejas sin esos campos).
-  const logGrid = 'grid items-start gap-x-3 px-4 py-1';
+  const logGrid = 'grid items-start gap-x-2 px-3 py-1';
   const gridStyle: React.CSSProperties = {
     gridTemplateColumns: `1.25rem ${anchos.fecha}px ${anchos.nivel}px ${anchos.componente}px ${anchos.codigo}px ${anchos.documento}px minmax(${anchos.mensaje}px, 1fr)`,
-    minWidth: 20 + COLS.reduce((t, c) => t + anchos[c.id], 0) + 6 * 12 + 32,
+    minWidth: 20 + COLS.reduce((t, c) => t + anchos[c.id], 0) + 6 * 8 + 24,
   };
   const ordenable = (c: ColId) => esBd(f.src) ? (!f.hist || c === 'fecha') : ORDEN_ARCHIVO.includes(c);
   const ordenar = (c: ColId) => {
