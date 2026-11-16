@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pause, Play, Search, ArrowDownToLine, Trash2, ChevronDown, ChevronRight, ChevronLeft, ChevronsLeft, AlertTriangle, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { api, type LogRow } from '../lib/api';
+import { useMantenerSesion } from '../lib/keepalive';
 import { cn } from '../lib/utils';
 import { Button, Card, Input, Label, Select, Switch, useToast } from '../components/ui';
 
@@ -69,6 +70,7 @@ export default function Registro() {
   const [f, setF] = useState<Filtros>({ src: 'bitacora', nivel: '', q: '', doc: '', desde: '', hasta: '', limit: '200', componente: '', codigo: '', run: '', hist: false });
   const [rows, setRows] = useState<(LogRow & { nuevo?: boolean })[]>([]);
   const [vivo, setVivo] = useState(true);
+  useMantenerSesion();
   const [auto, setAuto] = useState(true);
   const [cargando, setCargando] = useState(false);
   const [info, setInfo] = useState('');

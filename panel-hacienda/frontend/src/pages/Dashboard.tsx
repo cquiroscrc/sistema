@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Send, XOctagon, Hourglass, Power, CheckCircle2, Clock, ArrowRight } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, type DocRow, type Status } from '../lib/api';
+import { useMantenerSesion } from '../lib/keepalive';
 import { cn, fmtMonto, fmtNum } from '../lib/utils';
 import { Card, CardBody, CardHeader, CardTitle, EstadoBadge, Empty, Spinner, Tabs, Switch } from '../components/ui';
 import type { Vista } from '../App';
@@ -22,6 +23,7 @@ export default function Dashboard({ status, ir, onStatus }: { status: Status | n
   const [actualizado, setActualizado] = useState<Date | null>(null);
   const [fallo, setFallo] = useState(false);
   const control = useRef<{ run: () => void } | null>(null);
+  useMantenerSesion();
   const valores = useRef({ dias, auto, onStatus }); valores.current = { dias, auto, onStatus };
   useEffect(() => {
     let vivo = true, ocupado = false, pendiente = false;

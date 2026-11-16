@@ -21,6 +21,7 @@ try {
     }
     ph_require_login();
     switch ($a) {
+        case 'ping':    ph_json(['ok' => true, 'inactividad_seg' => PH_IDLE_SEG]); // keepalive: lib.php ya renovo 'ultimo'
         case 'resumen': ph_json(api_resumen());
         case 'grafico':  ph_json(api_grafico());
         case 'status':   ph_json(api_status() + ['migraciones' => api_mig_resumen()]);

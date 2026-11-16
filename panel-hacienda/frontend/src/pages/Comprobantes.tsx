@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState , useRef} from 'react';
-import { Search, FileText, FileDown, Eye, RotateCcw, ChevronLeft, ChevronRight, ExternalLink, Copy } from 'lucide-react';
+import { Pause, Play, Search, FileText, FileDown, Eye, RotateCcw, ChevronLeft, ChevronRight, ExternalLink, Copy } from 'lucide-react';
 import { api, apiUrl, type DocRow, type Status } from '../lib/api';
+import { useMantenerSesion } from '../lib/keepalive';
 import { fmtMonto, fmtNum, cn } from '../lib/utils';
 import { SortTh, siguienteOrden, type Orden } from '../components/SortTh';
 import { Button, Card, Drawer, Empty, EstadoBadge, Input, Label, Modal, Pill, Select, Spinner, Tabs, useToast } from '../components/ui';
@@ -19,10 +20,32 @@ export default function Comprobantes({ status, onCambio }: { status: Status | nu
   const [reintEnv, setReintEnv] = useState(false);
   const toast = useToast();
   const ordRef = useRef(orden);
-  const cargar = useCallback(async (p: number, x: F, o: Orden = ordRef.current) => {
-    setData(null); const j = await api('docs', { ...x, page: p, size: 25, orden: o.col, dir: o.dir });
-    setData(j.ok ? j : { total: 0, size: 25, rows: [] }); setPage(p);
+  // Ultima consulta aplicada (filtros enviados, pagina, orden): el auto-refresco repite exactamente esa, no lo que se este escribiendo.
+  const apl = useRef<{ p: number; x: F; o: Orden } | null>(null);
+  const seq = useRef(0);
+  const [auto, setAuto] = useState(() => { try { return localStorage.getItem('ph-comprobantes-auto') !== 'off'; } catch { return true; } });
+  const [actualizado, setActualizado] = useState<Date | null>(null);
+  useMantenerSesion();
+  const cargar = useCallback(async (p: number, x: F, o: Orden = ordRef.current, silencioso = false) => {
+    const n = ++seq.current; apl.current = { p, x, o };
+    if (!silencioso) setData(null);
+    let j: any;
+    try { j = await api('docs', { ...x, page: p, size: 25, orden: o.col, dir: o.dir }); } catch { if (silencioso) return; j = { ok: false }; }
+    if (n !== seq.current) return; // llego una consulta mas nueva
+    if (silencioso && !j.ok) return; // conservar la tabla si falla un refresco
+    setData(j.ok ? j : { total: 0, size: 25, rows: [] }); setPage(p); if (j.ok) setActualizado(new Date());
   }, []);
+  // Auto-refresco cada 30 s de la pagina actual con los filtros/orden aplicados; en pausa con la pestaña oculta.
+  // Sin vaciar la tabla (no parpadea ni pierde el scroll); el drawer y el modal abiertos se conservan.
+  useEffect(() => { try { localStorage.setItem('ph-comprobantes-auto', auto ? 'on' : 'off'); } catch {} }, [auto]);
+  useEffect(() => {
+    if (!auto) return;
+    const tick = () => { if (!document.hidden && apl.current) { const a = apl.current; void cargar(a.p, a.x, a.o, true); } };
+    const t = setInterval(tick, 30000);
+    const vis = () => { if (!document.hidden) tick(); };
+    document.addEventListener('visibilitychange', vis);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', vis); };
+  }, [auto, cargar]);
   useEffect(() => {
     const q = new URLSearchParams((location.hash.split('?')[1] || ''));
     const doc = (q.get('doc') || '').trim();
@@ -83,7 +106,9 @@ export default function Comprobantes({ status, onCambio }: { status: Status | nu
             </tr>)}
         </tbody></table></div>
       <div className="flex items-center justify-between border-t px-4 py-3 text-xs text-muted-foreground">
-        <span>{data ? `${fmtNum(data.total)} comprobantes` : '…'}</span>
+        <div className="flex flex-wrap items-center gap-3"><span>{data ? `${fmtNum(data.total)} comprobantes` : '…'}</span>
+          <span className="inline-flex items-center gap-1.5"><span className={cn('h-2 w-2 rounded-full', auto ? 'bg-success animate-pulse' : 'bg-muted-foreground')} />{auto ? 'Auto-actualización cada 30 s' : 'Auto-actualización en pausa'}{actualizado && ` · ${actualizado.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}</span>
+          <Button size="sm" variant="ghost" onClick={() => setAuto(v => !v)} aria-pressed={auto}>{auto ? <><Pause className="h-3.5 w-3.5" />Pausar</> : <><Play className="h-3.5 w-3.5" />Reanudar</>}</Button></div>
         <div className="flex items-center gap-2"><Button size="sm" variant="outline" disabled={page <= 1} onClick={() => cargar(page - 1, f)}><ChevronLeft className="h-3.5 w-3.5" /></Button>
           Página {page} de {fmtNum(paginas)}<Button size="sm" variant="outline" disabled={page >= paginas} onClick={() => cargar(page + 1, f)}><ChevronRight className="h-3.5 w-3.5" /></Button></div>
       </div>
