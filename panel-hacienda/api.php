@@ -121,14 +121,14 @@ function api_logs(): array
     $src   = $_GET['src'] ?? 'bitacora';
     $limit = max(10, min(500, (int)($_GET['limit'] ?? 100)));
     $texto = trim((string)($_GET['q'] ?? ''));
-    $nivel = in_array($_GET['nivel'] ?? '', ['Debug', 'Info', 'Warning', 'Error'], true) ? $_GET['nivel'] : '';
+    // Nivel: '' = todos (incluye Debug), uno de los niveles, o 'avisos' = Error + Warning. (El antiguo parametro 'vista' se ignora.)
+    $nivel = in_array($_GET['nivel'] ?? '', ['Debug', 'Info', 'Warning', 'Error', 'avisos'], true) ? $_GET['nivel'] : '';
     $doc   = trim((string)($_GET['doc'] ?? ''));
     $desde = ph_date($_GET['desde'] ?? null);
     $hasta = ph_date($_GET['hasta'] ?? null);
     $since = isset($_GET['since']) && $_GET['since'] !== '' ? (string)$_GET['since'] : null;
     $before = isset($_GET['before']) && $_GET['before'] !== '' ? (string)$_GET['before'] : null;
 
-    $vista = in_array($_GET['vista'] ?? '', ['eventos', 'avisos', 'diagnostico'], true) ? $_GET['vista'] : 'eventos';
     $componente = trim((string)($_GET['componente'] ?? ''));
     $codigo = trim((string)($_GET['codigo'] ?? ''));
     $run = trim((string)($_GET['run'] ?? ''));
@@ -145,9 +145,8 @@ function api_logs(): array
         if ($desde) { $w[] = 'FECHA_HORA >= CONVERT(datetime, ?, 121)'; $p[] = $desde; }
         if ($hasta) { $w[] = 'FECHA_HORA <= CONVERT(datetime, ?, 121)'; $p[] = strlen($hasta) === 10 ? "$hasta 23:59:59" : $hasta; }
         if (!$desde && $since === null && $before === null && $texto !== '') { $w[] = 'FECHA_HORA >= DATEADD(day, -7, GETDATE())'; }
-        if ($nivel) { $w[] = 'TIPO = ?'; $p[] = $nivel; }
-        elseif ($vista === 'eventos') { $w[] = "TIPO IN ('Info','Warning','Error')"; }
-        elseif ($vista === 'avisos') { $w[] = "TIPO IN ('Warning','Error')"; }
+        if ($nivel === 'avisos') { $w[] = "TIPO IN ('Warning','Error')"; }
+        elseif ($nivel) { $w[] = 'TIPO = ?'; $p[] = $nivel; }
         if ($doc !== '') { $w[] = 'DOCUMENTO LIKE ?'; $p[] = '%' . $doc . '%'; }
         if ($texto !== '') { $w[] = 'TEXTO LIKE ?'; $p[] = '%' . $texto . '%'; }
         if ($componente !== '') { $w[] = 'COMPONENTE = ?'; $p[] = $componente; }
@@ -159,29 +158,43 @@ function api_logs(): array
         // Paginado en el servidor (sin since/before): OFFSET/FETCH por FECHA_HORA DESC; se pide una fila extra para saber si hay más.
         $paginado = $since === null && $before === null;
         $total = null;
+        // Orden en el servidor (lista blanca). Desempate por FECHA_HORA DESC (la tabla es un heap sin id).
+        // Con historico (22,7M filas, solo indice por fecha) solo se permite ordenar por fecha.
+        $mapaOrden = ['fecha' => 'FECHA_HORA', 'nivel' => 'TIPO', 'componente' => 'COMPONENTE', 'codigo' => 'CODIGO', 'documento' => 'DOCUMENTO', 'mensaje' => 'CAST(TEXTO AS nvarchar(200))'];
+        $oCol = isset($mapaOrden[$_GET['orden'] ?? '']) ? (string)$_GET['orden'] : 'fecha';
+        $oDir = ($_GET['dir'] ?? '') === 'asc' ? 'ASC' : 'DESC';
+        if ($hist && $oCol !== 'fecha') $oCol = 'fecha';
+        $ordSql = $oCol === 'fecha' ? "FECHA_HORA $oDir" : "{$mapaOrden[$oCol]} $oDir, FECHA_HORA DESC";
         if ($paginado) {
             $off = ($page - 1) * $limit; $n = $limit + 1;
             if ($hist) {
-                // BITACORA_HIST solo tiene filas anteriores a las de BITACORA (la retencion mueve lo viejo), asi que en orden DESC
-                // se recorre primero BITACORA y luego se continua en el historico; cada parte con su propio OFFSET/FETCH.
-                $c = ph_db()->prepare("SELECT COUNT_BIG(*) FROM dbo.BITACORA $where"); $c->execute($p); $cb = (int)$c->fetchColumn();
+                // BITACORA_HIST solo tiene filas anteriores a las de BITACORA (la retencion mueve lo viejo): en orden DESC se recorre
+                // primero BITACORA y luego el historico; en ASC al reves. Cada parte con su propio OFFSET/FETCH.
+                $hint0 = ($nivel === '' && $texto === '' && $doc === '' && $componente === '' && $codigo === '' && $run === '') ? ' WITH (INDEX(IX_BITACORA_HIST_FECHA))' : '';
+                [$t1, $h1, $x1, $t2, $h2, $x2] = $oDir === 'DESC' ? ['dbo.BITACORA', 0, '', 'dbo.BITACORA_HIST', 1, $hint0] : ['dbo.BITACORA_HIST', 1, $hint0, 'dbo.BITACORA', 0, ''];
+                $c = ph_db()->prepare("SELECT COUNT_BIG(*) FROM $t1 $where"); $c->execute($p); $cb = (int)$c->fetchColumn();
                 $res = [];
                 if ($off < $cb) {
-                    $st = ph_db()->prepare("SELECT $cols, 0 AS hist FROM dbo.BITACORA $where ORDER BY FECHA_HORA DESC OFFSET $off ROWS FETCH NEXT $n ROWS ONLY");
+                    $st = ph_db()->prepare("SELECT $cols, $h1 AS hist FROM $t1$x1 $where ORDER BY FECHA_HORA $oDir OFFSET $off ROWS FETCH NEXT $n ROWS ONLY");
                     $st->execute($p); $res = $st->fetchAll(PDO::FETCH_ASSOC);
                 }
                 $faltan = $n - count($res);
+                if ($faltan > 0 && $oDir === 'ASC') {
+                    $st = ph_db()->prepare("SELECT $cols, $h2 AS hist FROM $t2$x2 $where ORDER BY FECHA_HORA ASC OFFSET " . max(0, $off - $cb) . " ROWS FETCH NEXT $faltan ROWS ONLY");
+                    $st->execute($p); $res = array_merge($res, $st->fetchAll(PDO::FETCH_ASSOC));
+                    $faltan = 0;
+                }
                 if ($faltan > 0) {
                     $offH = max(0, $off - $cb);
                     // Heap de 22M filas casi todo Debug: solo sin filtro de nivel (vista Diagnostico) se fuerza el indice de FECHA_HORA
                     // (recorrido hacia atras); con filtros de nivel/texto/documento/etc. decide el optimizador (puede tardar varios segundos).
-                    $hint = ($nivel === '' && $vista === 'diagnostico' && $texto === '' && $doc === '' && $componente === '' && $codigo === '' && $run === '') ? ' WITH (INDEX(IX_BITACORA_HIST_FECHA))' : '';
+                    $hint = $hint0;
                     $st = ph_db()->prepare("SELECT $cols, 1 AS hist FROM dbo.BITACORA_HIST$hint $where ORDER BY FECHA_HORA DESC OFFSET $offH ROWS FETCH NEXT $faltan ROWS ONLY");
                     $st->execute($p); $res = array_merge($res, $st->fetchAll(PDO::FETCH_ASSOC));
                 }
                 $st = new ArrayIterator($res);
             } else {
-                $st = ph_db()->prepare("SELECT $cols, 0 AS hist FROM dbo.BITACORA $where ORDER BY FECHA_HORA DESC OFFSET $off ROWS FETCH NEXT $n ROWS ONLY");
+                $st = ph_db()->prepare("SELECT $cols, 0 AS hist FROM dbo.BITACORA $where ORDER BY $ordSql OFFSET $off ROWS FETCH NEXT $n ROWS ONLY");
                 $st->execute($p);
             }
             // Total solo cuando es barato: BITACORA sin LIKE de texto/documento. Con historico (22M filas) o LIKE se omite y se muestra "hay más".
@@ -201,7 +214,7 @@ function api_logs(): array
         foreach (($st instanceof PDOStatement ? $st->fetchAll(PDO::FETCH_ASSOC) : iterator_to_array($st)) as $r) {
             $rows[] = [
                 'f' => $r['f'],
-                'nivel' => $r['nivel'],
+                'nivel' => $r['nivel'] !== null ? ucfirst(strtolower(trim((string)$r['nivel']))) : null, // el historico trae DEBUG/ERROR en mayusculas
                 'doc' => trim(($r['tipo'] ?? '') . ' ' . ($r['doc'] ?? '')),
                 'tipo_doc' => trim((string)($r['tipo'] ?? '')),
                 'numero' => trim((string)($r['doc'] ?? '')),
@@ -219,7 +232,7 @@ function api_logs(): array
         $newest = $rows ? $rows[0]['f'] : $since;
         $oldest = $rows ? end($rows)['f'] : null;
         $out = ['ok' => true, 'src' => $src, 'rows' => $rows, 'cursor_nuevo' => $newest, 'cursor_antiguo' => $oldest, 'mas' => $mas];
-        if ($paginado) $out += ['page' => $page, 'size' => $limit, 'total' => $total];
+        if ($paginado) $out += ['page' => $page, 'size' => $limit, 'total' => $total, 'orden' => $oCol, 'dir' => strtolower($oDir)];
         return $out;
     }
 
@@ -230,7 +243,7 @@ function api_logs(): array
         if ($src === 'php' && !preg_match('#api44|fe/API|panel-hacienda|Bitacora|hacienda#i', $l)) return false;
         if ($texto !== '' && stripos($l, $texto) === false) return false;
         if ($doc !== '' && stripos($l, $doc) === false) return false;
-        if ($nivel !== '' && ph_nivel($l) !== $nivel) return false;
+        if ($nivel === 'avisos' ? !in_array(ph_nivel($l), ['Error', 'Warning'], true) : ($nivel !== '' && ph_nivel($l) !== $nivel)) return false;
         return true;
     };
     [$lines, $cursor, $end, $size] = ph_tail($file, $limit, $before !== null ? (int)$before : null, $since !== null ? (int)$since : null, $filter);
