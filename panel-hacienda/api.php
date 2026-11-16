@@ -429,7 +429,9 @@ function api_doc(): array
     $r = $st->fetch(PDO::FETCH_ASSOC);
     if (!$r) return ['ok' => false, 'error' => 'Documento no encontrado'];
     $xml = xml_pretty($r['DOCUMENTO_ELECTRONICO']); $resp = xml_pretty($r['XML_RESPUESTA']);
-    $b = ph_db()->prepare("SELECT TOP 200 CONVERT(varchar(23), FECHA_HORA, 121) f, RTRIM(TIPO) nivel, TEXTO texto FROM dbo.BITACORA WHERE DOCUMENTO = ? ORDER BY FECHA_HORA DESC");
+    $b = ph_db()->prepare("SELECT CONVERT(varchar(23), FECHA_HORA, 121) f, RTRIM(TIPO) nivel, TEXTO texto FROM (
+        SELECT TOP 200 FECHA_HORA, TIPO, TEXTO FROM dbo.BITACORA WHERE DOCUMENTO = ? ORDER BY FECHA_HORA DESC
+    ) q ORDER BY FECHA_HORA ASC");
     $b->execute([$num]);
     $bit = array_map(fn($x) => ['f' => $x['f'], 'nivel' => $x['nivel'], 'texto' => ph_mask(ph_utf8($x['texto']))], $b->fetchAll(PDO::FETCH_ASSOC));
     unset($r['DOCUMENTO_ELECTRONICO'], $r['XML_RESPUESTA']);

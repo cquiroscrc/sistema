@@ -95,6 +95,62 @@ function corregirEncodingUtf8(string $texto): string
     return $texto;
 }
 
+
+function bitacora_http_hacienda(int $status): string
+{
+    switch ($status) {
+        case 200:
+            return 'Hacienda procesó el XML (HTTP 200): recibido correctamente; se lee el estado (aceptado o rechazado)';
+        case 202:
+            return 'Hacienda recibió el XML (HTTP 202): pendiente de ser procesado; se consultará el estado en la próxima corrida';
+        case 400:
+            return 'Hacienda rechazó la solicitud (HTTP 400): XML, clave o esquema inválidos';
+        case 401:
+            return 'Hacienda no autorizó la petición (HTTP 401): token inválido o vencido';
+        case 403:
+            return 'Hacienda denegó el acceso (HTTP 403)';
+        case 404:
+            return 'Hacienda no encontró el recurso (HTTP 404)';
+        case 429:
+            return 'Hacienda limitó las peticiones (HTTP 429): demasiadas solicitudes; se reintentará en una corrida posterior';
+        default:
+            if ($status >= 500) {
+                return "Error interno de Hacienda (HTTP $status): se reintentará en una corrida posterior";
+            }
+            if ($status >= 400) {
+                return "Error de cliente en la API de Hacienda (HTTP $status)";
+            }
+            return "Respuesta HTTP $status de Hacienda";
+    }
+}
+
+function bitacora_clave_corta(?string $clave = null): string
+{
+    if ($clave === null || $clave === '') {
+        try {
+            if (function_exists('params_get')) {
+                $clave = (string) (params_get('clave') ?? '');
+            }
+        } catch (Throwable $e) {
+            $clave = '';
+        }
+    }
+    $c = preg_replace('/\D/', '', (string) $clave);
+    if (strlen($c) >= 8) {
+        return 'clave …' . substr($c, -8);
+    }
+    return '';
+}
+
+function bitacora_con_clave(string $texto, ?string $clave = null): string
+{
+    $c = bitacora_clave_corta($clave);
+    if ($c === '' || str_contains($texto, $c)) {
+        return $texto;
+    }
+    return rtrim($texto, " .") . " ($c)";
+}
+
 /* Bitacora() vive en bitacora-lib.php */
 function module_info()
 {
@@ -961,22 +1017,22 @@ function ProcesarDocumento(string $sessionID, string $Documento, string $TipoDoc
         }
 
         //Creacion del XML
-        Bitacora($sessionID, "Creando XML", $Documento, $TipoDoc);
+        Bitacora($sessionID, "Generando XML del comprobante", $Documento, $TipoDoc);
         $xml = IniciaProcesoCreacionXML($sessionID, $Documento, $TipoDoc);
 
         if (!$continuar) {
-            Bitacora($sessionID, "El proceso se detuvo en la creacion del XML", $Documento, $TipoDoc);
-            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en la creacion del XML', 'envio', true);
+            Bitacora($sessionID, "El proceso se detuvo en la creación del XML", $Documento, $TipoDoc);
+            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en la creación del XML', 'envio', true);
             return;
         }
         $TIEMPO_EXPIRA_DOCHA_HORAS = getDatoCia($sessionID, "TIEMPO_EXPIRA_DOCHA_HORAS", $Documento, $TipoDoc);
         //Si el estado de hacienda es 1 , se procede con el guardado pero no se envia
         if (getEstadoHacienda($Documento, $TipoDoc) == "3") {
-            Bitacora($sessionID, "No hay conexion a hacienda, este documento se intentara procesar durante $TIEMPO_EXPIRA_DOCHA_HORAS horas mas", $Documento, $TipoDoc);
+            Bitacora($sessionID, "No hay conexión con Hacienda (API/IDP). Se reintentará el envío durante $TIEMPO_EXPIRA_DOCHA_HORAS horas más", $Documento, $TipoDoc);
             //UpdateInsert("N", "N", 'N', 'N', 'No hay conexion a hacienda, este documento se intentara procesar durante 48 horas mas', 'error', $xml, null,  $sessionID, $Documento, $TipoDoc);
             return;
         } else {
-            Bitacora($sessionID, "Conexion a hacienda exitosa.Inicia proceso de firmado y envio del documento  ", $Documento, $TipoDoc);
+            Bitacora($sessionID, "Conexión con Hacienda (API/IDP) disponible; se obtendrá o reutilizará el token y sigue el firmado y envío del XML", $Documento, $TipoDoc);
         }
 
         $TIEMPO_EXPIRA_DOCHA_HORAS = getDatoCia($sessionID, "TIEMPO_EXPIRA_DOCHA_HORAS", $Documento, $TipoDoc);
@@ -991,20 +1047,22 @@ function ProcesarDocumento(string $sessionID, string $Documento, string $TipoDoc
         }
 
         //Una vez creado iniciamos el proceso de firmado, pasando el xml que acabamos de crear y lo retorna firmado.
-        Bitacora($sessionID, "Firmando XML", $Documento, $TipoDoc);
+        Bitacora($sessionID, "Firmando el XML con el certificado digital", $Documento, $TipoDoc);
         $xmlFirmado = IniciaProcesoFirmado($xml, $sessionID, $Documento, $TipoDoc);
         if (!$continuar) {
-            Bitacora($sessionID, "El proceso se detuvo en el firmado del documento", $Documento, $TipoDoc);
-            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en el firmado del documento', 'envio', true);
+            Bitacora($sessionID, "El proceso se detuvo en el firmado del XML", $Documento, $TipoDoc);
+            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en el firmado del XML', 'envio', true);
             return;
         }
 
         //Intenta salvar el documento en el disco en ruta segun settings.php
-        Bitacora($sessionID, "Guardando XML firmado al sistema de archivos", $Documento, $TipoDoc);
         if (isset($xmlFirmado["xmlFirmado"])) {
             saveFile(params_get("clave") . ".xml", base64_decode($xmlFirmado["xmlFirmado"]), "XML", params_get("fecha_timbrado"), $Documento, $TipoDoc, $sessionID);
+            $dirXml = params_get("directory_xml") ?: "";
+            $nomXml = (params_get("clave") ?: $Documento) . ".xml";
+            Bitacora($sessionID, "XML firmado guardado en disco" . ($dirXml !== "" ? ": $dirXml/$nomXml" : ""), $Documento, $TipoDoc);
         } else {
-            Bitacora($sessionID, "No se logro guardar  el documento  $Documento despues de firmarlo, por lo tanto no se podra continuar ");
+            Bitacora($sessionID, "No se pudo guardar el XML firmado de $Documento en disco; no se continúa el envío");
         }
         if (!$continuar) {
             Bitacora($sessionID, "El proceso se detuvo en el guardado del XML firmado en disco", $Documento, $TipoDoc);
@@ -1015,35 +1073,38 @@ function ProcesarDocumento(string $sessionID, string $Documento, string $TipoDoc
         //******************** FIN DE PROCESO DE GENERACION*************************
 
         //Una vez creado inicio el proceso de envio del XML,aca se procesa el token primero
-        Bitacora($sessionID, "Inicia proceso de envio a hacienda del  XML", $Documento, $TipoDoc);
+        Bitacora($sessionID, bitacora_con_clave("Enviando el XML firmado a la API de recepción de Hacienda"), $Documento, $TipoDoc);
         IniciaProcesoEnvioXML($xmlFirmado, $sessionID, $Documento, $TipoDoc);
         if (!$continuar) {
-            Bitacora($sessionID, "El proceso se detuvo en el envio del documento", $Documento, $TipoDoc);
-            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en el envio del documento', 'envio', true);
+            Bitacora($sessionID, "El proceso se detuvo en el envío del XML a Hacienda", $Documento, $TipoDoc);
+            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en el envío del XML a Hacienda', 'envio', true);
             return;
         }
 
         //Hasta no enviarse no se crean los totales, y hasta no crear los totales no se genera el PDF
         //Generamos el PDF y lo guardamos en la base de datos
-        Bitacora($sessionID, "Creando PDF", $Documento, $TipoDoc);
+        Bitacora($sessionID, "Generando PDF del comprobante", $Documento, $TipoDoc);
         $strPDF = GenerarPDF($sessionID, $Documento, $TipoDoc);
         //Intenta salvar el documento en el disco en ruta segun settings.php
         if (strlen($strPDF) > 0) {
             saveFile(params_get("clave") . ".pdf", $strPDF, "PDF", params_get("fecha_timbrado"), $Documento, $TipoDoc, $sessionID);
+            $dirPdf = params_get("directory_pdf") ?: "";
+            $nomPdf = (params_get("clave") ?: $Documento) . ".pdf";
+            Bitacora($sessionID, "PDF guardado en disco" . ($dirPdf !== "" ? ": $dirPdf/$nomPdf" : ""), $Documento, $TipoDoc);
         } else {
-            Bitacora($sessionID, "No se logro generar y guardar el PDF del documento $Documento ");
+            Bitacora($sessionID, "No se pudo generar el PDF de $Documento");
         }
 
         if (!$continuar) {
-            Bitacora($sessionID, "El proceso se detuvo en el guardado del PDF en disco", $Documento, $TipoDoc);
-            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en el guardado del PDF en disco', 'envio', true);
+            Bitacora($sessionID, "El proceso se detuvo al guardar el PDF en disco", $Documento, $TipoDoc);
+            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo al guardar el PDF en disco', 'envio', true);
             return;
         }
-        Bitacora($sessionID, "Guardando PDF en base de datos", $Documento, $TipoDoc);
+        Bitacora($sessionID, "Guardando el PDF en la columna PDF de DOC_ELECTRONICO_PROCESADO", $Documento, $TipoDoc);
         UpdateDBPDF($sessionID, $Documento, $TipoDoc, $strPDF);
         if (!$continuar) {
-            Bitacora($sessionID, "El proceso se detuvo en el guardado del PDF en base de datos", $Documento, $TipoDoc);
-            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo en el guardado del PDF en base de datos', 'envio', true);
+            Bitacora($sessionID, "El proceso se detuvo al guardar el PDF en la base de datos", $Documento, $TipoDoc);
+            bitacora_doc_fallo($sessionID, $Documento, $TipoDoc, 'DOC_PROCESO_DETENIDO', 'El proceso se detuvo al guardar el PDF en la base de datos', 'envio', true);
             return;
         }
 
@@ -1364,7 +1425,7 @@ function Procesa400($respuesta, $sessionID, $XMLFirmado, $Documento, $TipoDoc)
                 json_encode($respuesta) ?? 'Error desconocido';
         }
 
-        Bitacora($sessionID, "$x_error_cause | estado: $ind_estado", $Documento, $TipoDoc);
+        Bitacora($sessionID, bitacora_con_clave(bitacora_http_hacienda((int) ($respuesta["Status"] ?? 400)) . " — $x_error_cause | estado Hacienda: $ind_estado"), $Documento, $TipoDoc);
 
         // Procesar según el estado devuelto por Hacienda
         if (!empty($ind_estado)) {
@@ -1414,7 +1475,7 @@ function Procesa400($respuesta, $sessionID, $XMLFirmado, $Documento, $TipoDoc)
                 $sessionID
             );
         } else {
-            Bitacora($sessionID, "No se obtuvo XML de respuesta de Hacienda", $Documento, $TipoDoc);
+            Bitacora($sessionID, "HTTP 4xx de Hacienda sin XML de respuesta; se conserva el estado para consultarlo luego (no se reenvía el XML)", $Documento, $TipoDoc);
             UpdateInsert("N", "N", "N", "S",
                 "No se logro obtener un XML de respuesta de hacienda",
                 $ind_estado ?? "error",
@@ -1465,10 +1526,10 @@ function GuardarRespuestaHacienda($sessionID, $xmlRespuesta, $Documento, $TipoDo
                     ':TipoDoc' => $TipoDoc
                 ]);
 
-                Bitacora($sessionID, "El documento ha sido $detalle_mensaje", $Documento, $TipoDoc);
+                Bitacora($sessionID, bitacora_con_clave("Respuesta de Hacienda: el documento ha sido $detalle_mensaje"), $Documento, $TipoDoc);
             }
         } else {
-            Bitacora($sessionID, "No hay respuesta de hacienda. El documento se intentará enviar luego", $Documento, $TipoDoc);
+            Bitacora($sessionID, "Sin XML de respuesta de Hacienda todavía: el comprobante sigue en procesamiento. Se consultará el estado en la próxima corrida (no se reenvía el XML)", $Documento, $TipoDoc);
         }
     } catch (Exception $ex) {
         SetContinuar(false);
@@ -1693,7 +1754,7 @@ function ConsultarDocumento($respuesta, $XMLFirmado, $sessionID, $Documento, $Ti
         params_set("api_url", $apiURLConsulta);
 
         if (stripos($x_error_cause, 'recibido anteriormente') !== false) {
-            Bitacora($sessionID, "Consultando comprobante previamente recibido en Hacienda", $Documento, $TipoDoc);
+            Bitacora($sessionID, bitacora_con_clave("Consultando en Hacienda un comprobante ya recibido (no se reenvía el XML)"), $Documento, $TipoDoc);
         }
 
         $jsonRespuesta = json_decode(consultar());
@@ -1745,7 +1806,7 @@ function ConsultarDirecto($sessionID, $Documento, $TipoDoc)
                 $fecha_timbrado = ObtenerDatoTabla($sessionID, "FECHATIMBRADO", "DOC_ELECTRONICO_PROCESADO", "NUMERO_DOC", $Documento);
                 saveFile("RSP_" . params_get("clave") . ".xml", base64_decode(params_get("xmlRespuesta")), "XML", $fecha_timbrado, $Documento, $TipoDoc, $sessionID);
             } else {
-                Bitacora($sessionID, "No hay todavia respuesta de hacienda.El documento se intentará enviar luego", $Documento, $TipoDoc);
+                Bitacora($sessionID, "Sin XML de respuesta de Hacienda todavía: el comprobante sigue en procesamiento. Se consultará el estado en la próxima corrida (no se reenvía el XML)", $Documento, $TipoDoc);
                 UpdateInsert("N", "N", "N", "S", "No hay todavia respuesta de hacienda.El documento se intentará enviar lueg", $ind_estado, $XMLFirmado, $xmlRespuesta, $sessionID, $Documento, $TipoDoc);
             }
         }
@@ -1780,13 +1841,13 @@ function ProcesaResultadoEnvio($respuesta, $sessionID, $XMLFirmado, $Documento, 
         $error=$respuesta["Status"];
         //Procesado,todo ok, se debe revisar si fue aceptado o no
         if ($respuesta["Status"] == 200) {
-            Bitacora($sessionID, "El documento se ha enviado y ha sido recibido correctamente($error)", $Documento, $TipoDoc);
+            Bitacora($sessionID, bitacora_con_clave(bitacora_http_hacienda(200)), $Documento, $TipoDoc);
             Procesa200($respuesta, $sessionID, $XMLFirmado, $Documento, $TipoDoc);
         }
 
         //Procesandose,fue enviado pero no fue aceptado
         if ($respuesta["Status"] == 202) {
-            Bitacora($sessionID, "El documento fue enviado pero esta pendiente de ser procesado por hacienda($error)", $Documento, $TipoDoc);
+            Bitacora($sessionID, bitacora_con_clave(bitacora_http_hacienda(202)), $Documento, $TipoDoc);
             Procesa202($respuesta, $sessionID, $XMLFirmado, $Documento, $TipoDoc, $XMLFirmado);
         }
 
@@ -1808,7 +1869,7 @@ function ProcesaResultadoEnvio($respuesta, $sessionID, $XMLFirmado, $Documento, 
 
         //Error causado por error el servidor
         if ($respuesta["Status"] >= 500) {
-            Bitacora($sessionID, "Ha ocurrido un error en el servidor de hacienda($error)(sorpresaaaa)!!!.", $Documento, $TipoDoc);
+            Bitacora($sessionID, bitacora_con_clave(bitacora_http_hacienda((int) $error)), $Documento, $TipoDoc);
             Procesa500($respuesta, $sessionID, $Documento, $TipoDoc, $XMLFirmado);
         }
     } catch (Exception $ex) {
@@ -1907,7 +1968,7 @@ function UpdateInsert($Aceptado, $ErrorLocal, $Enviado, $ErrorHacienda, $UltimoE
                 ':xml_path' => $xml_path, ':pdf_path' => $pdf_path,
                 ':Documento' => $Documento, ':TipoDoc' => $TipoDoc]);
 
-            Bitacora($sessionID, "Datos actualizados en DOC_ELECTRONICO_PROCESADO", $Documento, $TipoDoc);
+            Bitacora($sessionID, "Actualizados datos del comprobante en DOC_ELECTRONICO_PROCESADO (estado Hacienda: $Estado)", $Documento, $TipoDoc);
             GuardarRespuestaHacienda($sessionID, $XMLRespuesta, $Documento, $TipoDoc);
 
         } else {
@@ -1990,7 +2051,7 @@ function UpdateInsert($Aceptado, $ErrorLocal, $Enviado, $ErrorHacienda, $UltimoE
             } catch (PDOException $ex) {
                 Bitacora($sessionID, "UpdateInsert Error: {$ex->getMessage()}", $Documento, $TipoDoc);
             }
-            Bitacora($sessionID, "Datos guardados exitosamente.", $Documento, $TipoDoc);
+            Bitacora($sessionID, "Insertados datos del comprobante en DOC_ELECTRONICO_PROCESADO (estado Hacienda: $Estado)", $Documento, $TipoDoc);
             GuardarRespuestaHacienda($sessionID, $XMLRespuesta, $Documento, $TipoDoc);
         }
     } catch (Exception $ex) {
@@ -2068,14 +2129,14 @@ function GetAndSaveToken($ambiente, $sessionID, $Documento, $TipoDoc)
                 //Refresh Token Expirado?
                 if ($result[$REFRESH_EXPIRES_IN] < $TiempoActual) { // O sea los dos tipos de token expiraron
                     //Entonces se solicita un nuevo token(que trae un nuevo access_token y un nuevo_refresh
-                    Bitacora($sessionID, "Obteniendo  access_token via password, refresh_token expiró", $Documento, $TipoDoc);
+                    Bitacora($sessionID, "Obteniendo access_token en el IDP (grant password: el refresh_token expiró)", $Documento, $TipoDoc);
                     params_set("grant_type", "password");
                     $token = token();
 
                     SaveToken($token, $ambiente, $sessionID, $Documento, $TipoDoc);
                 } else //El refresh token no esta vencido, se usa para obtener el access_token
                 {
-                    Bitacora($sessionID, "Obteniendo access_token via refresh_token", $Documento, $TipoDoc);
+                    Bitacora($sessionID, "Obteniendo access_token en el IDP (grant refresh_token)", $Documento, $TipoDoc);
                     params_set("grant_type", "refresh_token");
                     params_set("refresh_token", $result[$REFRESH_TOKEN]);
                     $token = token();
@@ -2085,7 +2146,7 @@ function GetAndSaveToken($ambiente, $sessionID, $Documento, $TipoDoc)
         } else { //Es la primera vez que se solicita token
             params_set("grant_type", "password");
             //Aca se obtiene el token
-            Bitacora($sessionID, "Obteniendo access_token nuevo via password ", $Documento, $TipoDoc);
+            Bitacora($sessionID, "Obteniendo access_token nuevo en el IDP (grant password)", $Documento, $TipoDoc);
             $token = token();
             //Aca lo guardamos en la bd
             SaveToken($token, $ambiente, $sessionID, $Documento, $TipoDoc);
@@ -2118,7 +2179,7 @@ function SaveToken($token, $ambiente, $sessionID, $Documento, $TipoDoc)
         $AccessExpiresOn = date_format(date_add($AccessExpiresOn, date_interval_create_from_date_string($token->expires_in . ' seconds')), 'Y-m-d H:i:s');
         $RefreshExpiresOn = date_format(date_add($RefreshExpiresOn, date_interval_create_from_date_string($token->refresh_expires_in . ' seconds')), 'Y-m-d H:i:s');
 
-        Bitacora($sessionID, "Guardando token en base de datos", $Documento, $TipoDoc);
+        Bitacora($sessionID, "Guardando token de Hacienda en COMPAÑIAS (IDP)", $Documento, $TipoDoc);
         $sql = "UPDATE COMPAÑIAS SET
                 $ACCESS_TOKEN='$token->access_token',
                 $REFRESH_TOKEN='$token->refresh_token',
@@ -2292,7 +2353,7 @@ function CloseTokenSession($sessionID)
         if ($err) {
             Bitacora($sessionID, "err=$err,resp=$respuesta,status=$status");
         } else {
-            Bitacora($sessionID, "Se cierra sesion con el IDP de hacienda correctamente");
+            Bitacora($sessionID, "Se cierra sesion con el IDP de Hacienda correctamente");
             $sql = "update dbo.COMPAÑIAS SET $rft=NULL,$rft_time=NULL WHERE CONFIGURADA='SI'";
             sql_exec($sql);
 
@@ -2361,10 +2422,10 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
         }
         if ($res == '-200') {
             if (!empty($Documento)) {
-                Bitacora($sessionID, "Este documento no tiene correo pendiente de enviar", $Documento, $TipoDoc);
+                Bitacora($sessionID, "Este comprobante no tiene correo pendiente (EMAIL_ENVIADO distinto de NO)", $Documento, $TipoDoc);
                 return;
             } else {
-                Bitacora($sessionID, "No se encontraron correos pendientes de procesar  ");
+                Bitacora($sessionID, "No se encontraron correos pendientes de procesar");
                 return;
             }
 
@@ -2386,7 +2447,7 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
 
             $clave = ObtenerDatoTabla($sessionID, "SELLO_SAT", "DOC_ELECTRONICO_PROCESADO", "NUMERO_DOC", "$Documento");
             if ($clave == "0") {
-                bitacora_doc_fallo($sessionID, (string)$Documento, (string)$TipoDoc, 'MAIL_SIN_CLAVE', 'El documento no tiene una clave asignada', 'recepcion', false);
+                bitacora_doc_fallo($sessionID, (string)$Documento, (string)$TipoDoc, 'MAIL_SIN_CLAVE', 'Correo pospuesto: el comprobante no tiene clave (SELLO_SAT)', 'recepcion', false);
                 continue;
             }
             $fecha_timbrado=$correo["FECHATIMBRADO"];
@@ -2399,11 +2460,11 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
 
             //Si no tienen este dato no se pueden enviar los correos
             if (strlen($directory_pdf) <= 0) {
-                bitacora_doc_fallo($sessionID, (string)$Documento, (string)$TipoDoc, 'MAIL_SIN_DIR_PDF', 'El directorio de almacenamiento de PDFs obtenido de la base de datos, no existe', 'recepcion', false);
+                bitacora_doc_fallo($sessionID, (string)$Documento, (string)$TipoDoc, 'MAIL_SIN_DIR_PDF', 'Correo pospuesto: el directorio de PDFs (PDF_PATH) no existe o está vacío', 'recepcion', false);
                 continue;
             }
             if (strlen($directory_xml) <= 0) {
-                bitacora_doc_fallo($sessionID, (string)$Documento, (string)$TipoDoc, 'MAIL_SIN_DIR_XML', 'El directorio de almacenamiento de XMLs obtenido de la base de datos, no existe', 'recepcion', false);
+                bitacora_doc_fallo($sessionID, (string)$Documento, (string)$TipoDoc, 'MAIL_SIN_DIR_XML', 'Correo pospuesto: el directorio de XMLs (XML_PATH) no existe o está vacío', 'recepcion', false);
                 continue;
             }
             Bitacora($sessionID, "Procesando correo $i de $total_documentos ", rtrim($Documento), rtrim($TipoDoc));
@@ -2428,7 +2489,7 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
                     }
                     if (!empty($fecha_timbrado) and !empty($xmlRespuesta)) {
                         saveFile("RSP_" . $clave . ".xml", $xmlRespuesta, "XML", $fecha_timbrado, $Documento, $TipoDoc, $sessionID);
-                        Bitacora($sessionID, "XML Respuesta creado a partir de la base de datos", $Documento, $TipoDoc);
+                        Bitacora($sessionID, "XML de respuesta de Hacienda reconstruido en disco desde la BD: $directory_xml/$xml_resp_filename", $Documento, $TipoDoc);
                         $existe_rsp = file_exists($directory_xml . "/" . $xml_resp_filename);
                     }
 
@@ -2439,23 +2500,24 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
                 //Intenta salvar el documento en el disco en ruta segun settings.php
                 if (strlen($strPDF) > 0) {
                     saveFile($clave  . ".pdf", $strPDF, "PDF", $fecha_timbrado, $Documento, $TipoDoc, $sessionID);
+                    Bitacora($sessionID, "PDF guardado en disco" . ($directory_pdf !== "" ? ": $directory_pdf/$pdf_filename" : ""), $Documento, $TipoDoc);
                 } else {
-                    Bitacora($sessionID, "No se logro generar y guardar el PDF del documento $Documento ");
+                    Bitacora($sessionID, "No se pudo generar el PDF de $Documento");
                 }
                 $existe_pdf = file_exists($directory_pdf . "/" . $pdf_filename);
 
             }
             if (!$existe_pdf or !$existe_xml or !$existe_rsp) {
                 if (!$existe_pdf) {
-                    Bitacora($sessionID, "El PDF no existe , no se enviara el correo", $Documento, $TipoDoc);
+                    Bitacora($sessionID, "Correo pospuesto hasta tener el PDF en disco", $Documento, $TipoDoc);
                 }
 
                 if (!$existe_xml) {
-                    Bitacora($sessionID, "El XML no existe , no se enviara el correo", $Documento, $TipoDoc);
+                    Bitacora($sessionID, "Correo pospuesto hasta tener el XML firmado en disco", $Documento, $TipoDoc);
                 }
 
                 if (!$existe_rsp) {
-                    Bitacora($sessionID, "El XML de respuesta no existe , no se enviara el correo", $Documento, $TipoDoc);
+                    Bitacora($sessionID, "Correo pospuesto hasta tener el XML de respuesta de Hacienda", $Documento, $TipoDoc);
                 }
 
                 $procesar = false; //Pasa al siguiente correo
@@ -2531,7 +2593,7 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
                 $mail_receptors = explode(';',$correo["CORREO_CLIENTE"]);
                 foreach($mail_receptors as $mail_receptor){
                     $message->addTo($mail_receptor, $cliente);
-                    Bitacora($sessionID, "Agregando destinatario: $mail_receptor", $Documento, $TipoDoc);
+                    Bitacora($sessionID, "Destinatario del correo: $mail_receptor", $Documento, $TipoDoc);
 
                 }
 
@@ -2574,12 +2636,13 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
 
                 $message->setBody($html, "text/html");
                 // Send the message
+                $destinatarios = implode(", ", array_map("trim", $mail_receptors));
                 $numSent = $mailer->send($message);
                 if (!$numSent) {
-                    Bitacora($sessionID, "El mensaje no puedo ser enviado para el documento # $clave", $Documento, $TipoDoc);
+                    Bitacora($sessionID, "No se pudo enviar el correo del comprobante (destinatario: $destinatarios) " . bitacora_clave_corta($clave), $Documento, $TipoDoc);
                     UpdateMailSend('NO', $clave);
                 } else {
-                    Bitacora($sessionID, "El mensaje fue enviado al cliente exitosamente", $Documento, $TipoDoc);
+                    Bitacora($sessionID, "El mensaje fue enviado al cliente exitosamente (destinatario: $destinatarios)", $Documento, $TipoDoc);
                     if ($clave != "") {
                         UpdateMailSend('SI', $clave);
                     }
