@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Play, Square, AlertTriangle, ShieldAlert, Timer, Activity } from 'lucide-react';
+import { Play, Square, AlertTriangle, ShieldAlert, Timer } from 'lucide-react';
 import { api, type Status } from '../lib/api';
 import { cn } from '../lib/utils';
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Modal, useToast } from '../components/ui';
@@ -42,7 +42,6 @@ export default function Servicio({ status, onCambio }: { status: Status | null; 
       <CardHeader><CardTitle className="flex items-center gap-2"><ShieldAlert className="h-4 w-4 text-warning" />Antes de iniciar</CardTitle></CardHeader>
       <CardBody className="space-y-3 text-sm">
         <div className="flex gap-3"><Timer className="mt-0.5 h-4 w-4 shrink-0 text-warning" /><p>Deshabilite la <b>tarea programada en 172.16.12.3</b> que ejecuta admin.php. Si ambos servidores están activos los comprobantes se envían dos veces.</p></div>
-        <div className="flex gap-3"><Activity className="mt-0.5 h-4 w-4 shrink-0 text-warning" /><p>La BD <b>{status?.bd.database}</b> en <b>{status?.bd.host}</b> es una copia{status?.bd.restaurada ? ` restaurada el ${status.bd.restaurada}` : ''}: haga la restauración final y aplique la corrección de rutas antes.</p></div>
       </CardBody>
     </Card>
     <Modal open={modal === 'start'} onClose={() => setModal(null)} tone="danger" title={<span className="flex items-center gap-2 text-danger"><AlertTriangle className="h-5 w-5" />Iniciar envío a Hacienda desde este servidor</span>}

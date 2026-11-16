@@ -83,7 +83,8 @@ export default function App() {
   if (usuario === null) return <Login onOk={(u) => setUsuario(u)} oscuro={oscuro} onTema={tema} />;
 
   const activo = !!status?.servicio_activo;
-  return <div className="flex min-h-screen">
+  // Shell de altura fija: encabezado y pie siempre visibles; solo <main> hace scroll.
+  return <div className="flex h-dvh overflow-hidden">
     <aside className={cn('fixed inset-y-0 left-0 z-30 flex w-64 flex-col bg-sidebar text-sidebar-foreground transition-transform lg:translate-x-0', menu ? 'translate-x-0' : '-translate-x-full')}>
       <div className="flex items-center gap-3 px-5 py-5">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-accent text-white shadow"><Receipt className="h-5 w-5" /></div>
@@ -103,8 +104,8 @@ export default function App() {
       </div>
     </aside>
     {menu && <div className="fixed inset-0 z-20 bg-black/40 lg:hidden" onClick={() => setMenu(false)} />}
-    <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
-      <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur lg:px-8">
+    <div className="flex h-dvh min-w-0 flex-1 flex-col lg:pl-64">
+      <header className="z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur lg:px-8">
         <button className="lg:hidden" onClick={() => setMenu(true)} aria-label="Menú"><Menu className="h-5 w-5" /></button>
         <h1 className="text-base font-semibold">{titulo}</h1>
         <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
@@ -113,7 +114,7 @@ export default function App() {
           <button onClick={tema} className="rounded-md p-2 hover:bg-muted" aria-label="Tema">{oscuro ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</button>
         </div>
       </header>
-      <main className="min-w-0 flex-1 p-4 lg:p-8">
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 lg:p-8">
         <MigracionesAviso m={status?.migraciones} bd={status?.bd?.database} onCambio={cargarStatus} />
         <ErrorBoundary key={vista} nombre={titulo || vista}>
           {vista === 'inicio' && <Dashboard status={status} ir={ir} onStatus={setStatus} />}
@@ -126,8 +127,8 @@ export default function App() {
           {vista.startsWith('configuracion') && <Configuracion tab={pestanaDe(vista)} onTab={t => ir(t === 'correo' ? 'configuracion' : `configuracion/${t}` as Vista)} />}
         </ErrorBoundary>
       </main>
-      {/* Pie discreto al final de la pagina (no fijo: no tapa las barras de paginacion sticky) */}
-      <footer className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t px-4 py-2 text-[11px] text-muted-foreground lg:px-8">
+      {/* Pie fijo al fondo del shell (fuera de <main>: las barras sticky de paginacion quedan dentro del scroll, encima de el) */}
+      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t px-4 py-2 text-[11px] text-muted-foreground lg:px-8">
         <span>{status ? <>BD <b className="font-medium text-foreground/80">{status.bd.database}</b> @ {status.bd.host}</> : '\u00a0'}</span>
         {status?.version && <span className="font-mono" title="Fecha del último cambio de código (hora de Costa Rica)">{status.version}</span>}
       </footer>
