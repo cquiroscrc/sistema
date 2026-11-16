@@ -133,6 +133,7 @@ function api_logs(): array
     $codigo = trim((string)($_GET['codigo'] ?? ''));
     $run = trim((string)($_GET['run'] ?? ''));
     $hist = (string)($_GET['hist'] ?? '') === '1';
+    $page = max(1, min(100000, (int)($_GET['page'] ?? 1)));
 
     if (in_array($src, ['bitacora', 'bitacora_fe', 'bitacora_panel'], true)) {
         $w = []; $p = [];
@@ -155,7 +156,40 @@ function api_logs(): array
         $where = $w ? 'WHERE ' . implode(' AND ', $w) : '';
         $order = $since !== null ? 'ASC' : 'DESC';
         $cols = "CONVERT(varchar(23), FECHA_HORA, 121) AS f, RTRIM(TIPO) AS nivel, TEXTO AS texto, RTRIM(DOCUMENTO) AS doc, RTRIM(TIPO_DOCUMENTO) AS tipo, RTRIM(SESSION_ID) AS sesion, RTRIM(RUN_ID) AS run_id, RTRIM(COMPONENTE) AS componente, RTRIM(CODIGO) AS codigo";
-        if ($hist) {
+        // Paginado en el servidor (sin since/before): OFFSET/FETCH por FECHA_HORA DESC; se pide una fila extra para saber si hay más.
+        $paginado = $since === null && $before === null;
+        $total = null;
+        if ($paginado) {
+            $off = ($page - 1) * $limit; $n = $limit + 1;
+            if ($hist) {
+                // BITACORA_HIST solo tiene filas anteriores a las de BITACORA (la retencion mueve lo viejo), asi que en orden DESC
+                // se recorre primero BITACORA y luego se continua en el historico; cada parte con su propio OFFSET/FETCH.
+                $c = ph_db()->prepare("SELECT COUNT_BIG(*) FROM dbo.BITACORA $where"); $c->execute($p); $cb = (int)$c->fetchColumn();
+                $res = [];
+                if ($off < $cb) {
+                    $st = ph_db()->prepare("SELECT $cols, 0 AS hist FROM dbo.BITACORA $where ORDER BY FECHA_HORA DESC OFFSET $off ROWS FETCH NEXT $n ROWS ONLY");
+                    $st->execute($p); $res = $st->fetchAll(PDO::FETCH_ASSOC);
+                }
+                $faltan = $n - count($res);
+                if ($faltan > 0) {
+                    $offH = max(0, $off - $cb);
+                    // Heap de 22M filas casi todo Debug: solo sin filtro de nivel (vista Diagnostico) se fuerza el indice de FECHA_HORA
+                    // (recorrido hacia atras); con filtros de nivel/texto/documento/etc. decide el optimizador (puede tardar varios segundos).
+                    $hint = ($nivel === '' && $vista === 'diagnostico' && $texto === '' && $doc === '' && $componente === '' && $codigo === '' && $run === '') ? ' WITH (INDEX(IX_BITACORA_HIST_FECHA))' : '';
+                    $st = ph_db()->prepare("SELECT $cols, 1 AS hist FROM dbo.BITACORA_HIST$hint $where ORDER BY FECHA_HORA DESC OFFSET $offH ROWS FETCH NEXT $faltan ROWS ONLY");
+                    $st->execute($p); $res = array_merge($res, $st->fetchAll(PDO::FETCH_ASSOC));
+                }
+                $st = new ArrayIterator($res);
+            } else {
+                $st = ph_db()->prepare("SELECT $cols, 0 AS hist FROM dbo.BITACORA $where ORDER BY FECHA_HORA DESC OFFSET $off ROWS FETCH NEXT $n ROWS ONLY");
+                $st->execute($p);
+            }
+            // Total solo cuando es barato: BITACORA sin LIKE de texto/documento. Con historico (22M filas) o LIKE se omite y se muestra "hay más".
+            if (!$hist && $texto === '' && $doc === '') {
+                try { $c = ph_db()->prepare("SELECT COUNT_BIG(*) FROM dbo.BITACORA $where"); $c->execute($p); $total = (int)$c->fetchColumn(); }
+                catch (Throwable $e) { $total = null; }
+            }
+        } elseif ($hist) {
             $sql = "SELECT TOP $limit * FROM (SELECT $cols, 0 AS hist FROM dbo.BITACORA $where UNION ALL SELECT $cols, 1 AS hist FROM dbo.BITACORA_HIST $where) u ORDER BY f $order";
             $st = ph_db()->prepare($sql);
             $st->execute(array_merge($p, $p));
@@ -164,7 +198,7 @@ function api_logs(): array
             $st->execute($p);
         }
         $rows = [];
-        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        foreach (($st instanceof PDOStatement ? $st->fetchAll(PDO::FETCH_ASSOC) : iterator_to_array($st)) as $r) {
             $rows[] = [
                 'f' => $r['f'],
                 'nivel' => $r['nivel'],
@@ -180,9 +214,13 @@ function api_logs(): array
             ];
         }
         if ($since !== null) $rows = array_reverse($rows);
+        $mas = count($rows) >= $limit;
+        if ($paginado) { $mas = count($rows) > $limit; if ($mas) array_pop($rows); }
         $newest = $rows ? $rows[0]['f'] : $since;
         $oldest = $rows ? end($rows)['f'] : null;
-        return ['ok' => true, 'src' => $src, 'rows' => $rows, 'cursor_nuevo' => $newest, 'cursor_antiguo' => $oldest, 'mas' => count($rows) >= $limit];
+        $out = ['ok' => true, 'src' => $src, 'rows' => $rows, 'cursor_nuevo' => $newest, 'cursor_antiguo' => $oldest, 'mas' => $mas];
+        if ($paginado) $out += ['page' => $page, 'size' => $limit, 'total' => $total];
+        return $out;
     }
 
     $files = ['sender' => PH_SENDER_LOG, 'php' => PH_PHP_LOG, 'errores' => PH_ERRORS_LOG];
