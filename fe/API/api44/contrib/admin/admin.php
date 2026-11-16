@@ -1318,17 +1318,14 @@ function UpdateDBPDF($sessionID, $Documento, $TipoDoc, $xPDF)
         $sql = "select NUMERO_DOC from DOC_ELECTRONICO_PROCESADO where NUMERO_DOC='$Documento' and TIPO_DOC='$TipoDoc'";
         $result = sql_exec($sql, 2, false, true);
         //Ya existe el documento
-        $data = [
-            'pdf' => $xPDF,
-        ];
         if ($result != '-200') {
-            $sql = "UPDATE DOC_ELECTRONICO_PROCESADO SET  PDF=convert(varbinary(max),:pdf)
+            $sql = "UPDATE DOC_ELECTRONICO_PROCESADO SET PDF = :pdf
                where NUMERO_DOC='$Documento' and TIPO_DOC='$TipoDoc' ";
 
             if (db_allGood() === true) {
                 $stmt = $dbConn->prepare($sql);
-                $stmt->setAttribute(PDO::SQLSRV_ATTR_ENCODING, PDO::SQLSRV_ENCODING_SYSTEM);
-                $stmt->execute($data);
+                $stmt->bindParam(':pdf', $xPDF, PDO::PARAM_LOB, 0, PDO::SQLSRV_ENCODING_BINARY);
+                $stmt->execute();
             }
             // sql_exec($sql,0,true,true);
         }
@@ -2501,10 +2498,14 @@ function ProcesarCorreosPendientes($sessionID, $Documento = "", $TipoDoc = "")
                 if (strlen($strPDF) > 0) {
                     saveFile($clave  . ".pdf", $strPDF, "PDF", $fecha_timbrado, $Documento, $TipoDoc, $sessionID);
                     Bitacora($sessionID, "PDF guardado en disco" . ($directory_pdf !== "" ? ": $directory_pdf/$pdf_filename" : ""), $Documento, $TipoDoc);
+                    $existe_pdf = file_exists($directory_pdf . "/" . $pdf_filename);
+                    if ($existe_pdf) {
+                        UpdateDBPDF($sessionID, $Documento, $TipoDoc, $strPDF);
+                    }
                 } else {
                     Bitacora($sessionID, "No se pudo generar el PDF de $Documento");
+                    $existe_pdf = file_exists($directory_pdf . "/" . $pdf_filename);
                 }
-                $existe_pdf = file_exists($directory_pdf . "/" . $pdf_filename);
 
             }
             if (!$existe_pdf or !$existe_xml or !$existe_rsp) {
