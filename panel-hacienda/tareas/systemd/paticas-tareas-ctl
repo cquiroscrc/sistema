@@ -10,6 +10,33 @@
 # schedule escribe un drop-in OnCalendar y hace daemon-reload (recálcula la próxima si el timer ya está activo).
 #   Nunca habilita, deshabilita, reinicia ni arranca un timer apagado, y nunca inicia el servicio.
 set -euo pipefail
+SELF=/usr/local/sbin/paticas-tareas-ctl
+
+escribir_dropin() {
+  local unit="$1" cal="$2"
+  local dir="/etc/systemd/system/${unit}.timer.d"
+  local dest="${dir}/horario.conf"
+  mkdir -p "$dir" || { echo "no se pudo crear $dir" >&2; return 1; }
+  local tmp
+  tmp=$(mktemp "${dir}/horario.XXXXXX") || { echo "no se pudo escribir en $dir (sistema de archivos de solo lectura)" >&2; return 1; }
+  printf '%s\n' '[Timer]' 'OnCalendar=' "OnCalendar=${cal}" > "$tmp"
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$dest"
+}
+
+# php-fpm corre con ProtectSystem=full: /etc es de solo lectura incluso tras sudo.
+# Este modo lo invoca systemd-run en el namespace del host; no está en sudoers de www-data.
+if [ "${1:-}" = "__write_dropin" ]; then
+  [ "$(id -u)" -eq 0 ] || { echo "no autorizado" >&2; exit 2; }
+  [ $# -eq 3 ] || { echo "argumentos invalidos" >&2; exit 2; }
+  unit="$2"; cal="$3"
+  re_u='^paticas-[a-z0-9-]+$'; re_c='^[A-Za-z0-9 /:._*-]+$'
+  [[ "$unit" =~ $re_u ]] || { echo "unidad invalida" >&2; exit 2; }
+  [[ "$cal" =~ $re_c ]] || { echo "horario no permitido" >&2; exit 2; }
+  escribir_dropin "$unit" "$cal"
+  exit 0
+fi
+
 ID="${1:-}"
 ACC="${2:-}"
 NOMBRE="${3:-}"
@@ -66,14 +93,15 @@ oncalendar_de_token() {
 # Drop-in que reemplaza OnCalendar. Solo daemon-reload; no se reinicia el timer ni el servicio.
 aplicar_horario() {
   local unit="$1" cal="$2"
+  local re_u='^paticas-[a-z0-9-]+$'; local re_c='^[A-Za-z0-9 /:._*-]+$'
+  [[ "$unit" =~ $re_u ]] || { echo "unidad invalida" >&2; exit 2; }
+  [[ "$cal" =~ $re_c ]] || { echo "horario no permitido" >&2; exit 2; }
   local dir="/etc/systemd/system/${unit}.timer.d"
-  local dest="${dir}/horario.conf"
-  mkdir -p "$dir"
-  local tmp
-  tmp=$(mktemp "${dir}/horario.XXXXXX")
-  printf '%s\n' '[Timer]' 'OnCalendar=' "OnCalendar=${cal}" > "$tmp"
-  chmod 644 "$tmp"
-  mv -f "$tmp" "$dest"
+  if mkdir -p "$dir" 2>/dev/null && [ -w "$dir" ]; then
+    escribir_dropin "$unit" "$cal"
+  else
+    /usr/bin/systemd-run --wait --collect --quiet --property=ProtectSystem=no -- "$SELF" __write_dropin "$unit" "$cal"       || { echo "no se pudo escribir el horario: /etc es de solo lectura (php-fpm ProtectSystem)" >&2; exit 1; }
+  fi
   /usr/bin/systemctl daemon-reload
   # No se reinicia el timer: en systemd 255, restart/try-restart dispara el servicio.
   # daemon-reload recálcula NextElapse si el timer ya estaba activo; si está apagado, no se arranca.

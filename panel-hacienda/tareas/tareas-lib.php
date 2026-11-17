@@ -288,7 +288,13 @@ function api_tarea_horario(): array
     if ($proxima !== '') $msg .= ' (próxima: ' . $proxima . ')';
     $msg .= " (rc=$rc)";
     ph_accion($msg, $rc === 0 ? 'Info' : 'Error');
-    if ($rc !== 0) return ['ok' => false, 'error' => 'No se pudo cambiar el horario', 'salida' => implode("\n", $out), 'rc' => $rc];
+    if ($rc !== 0) {
+        $detalle = trim(implode("\n", $out));
+        $detalle = trim((string)preg_replace('/\s+/', ' ', $detalle));
+        $err = 'No se pudo cambiar el horario';
+        if ($detalle !== '') $err .= ': ' . mb_substr($detalle, 0, 240);
+        return ['ok' => false, 'error' => $err, 'salida' => implode("\n", $out), 'rc' => $rc];
+    }
     return [
         'ok' => true,
         'horario' => $horario,

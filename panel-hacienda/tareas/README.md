@@ -17,3 +17,4 @@ El respaldo se controla desde .106 con la llave `/etc/lospaticas/ssh/paticas-bac
 y el comando forzado en .100 (`paticas-backup-ctl`).
 `schedule` solo escribe el drop-in y hace `daemon-reload` (si el timer ya está activo, recálcula la próxima ejecución).
 No habilita, no deshabilita y no arranca el servicio.
+Desde el panel (php-fpm con ProtectSystem=full) el drop-in se escribe con systemd-run, porque /etc es de solo lectura incluso tras sudo.
