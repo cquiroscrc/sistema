@@ -1,10 +1,14 @@
 #!/bin/bash
-# Control estrecho de tareas (3 locales en .106 + respaldo en .100).
+# Control estrecho de tareas (4 locales en .106 + respaldo en .100).
 # Uso: paticas-tareas-ctl <caja_correo|mensajeria_update|prefacturas_update|actividades_comerciales|backup_inventario> <enable|disable|start|status|log>
+#      paticas-tareas-ctl <id> schedule <token>
+#        token: diaria:HH:MM | intervalo:minutos:N | intervalo:horas:N | semanal:(Mon|Tue|Wed|Thu|Fri|Sat|Sun):HH:MM
 #      paticas-tareas-ctl backup_inventario <files|mega-status|mega-files|espacio|mega-espacio|retencion>
 #      paticas-tareas-ctl backup_inventario retencion-set <dias_local>:<dias_mega>   (enteros 1-365, lo valida tambien .100)
 #      paticas-tareas-ctl backup_inventario <download|delete|mega-download|mega-delete> inventario_YYYYMMDD_HHMM.bak
 # start lanza el servicio una vez (--no-block) y no cambia el timer.
+# schedule escribe un drop-in OnCalendar y hace daemon-reload (recálcula la próxima si el timer ya está activo).
+#   Nunca habilita, deshabilita, reinicia ni arranca un timer apagado, y nunca inicia el servicio.
 set -euo pipefail
 ID="${1:-}"
 ACC="${2:-}"
@@ -16,6 +20,8 @@ case "$ID" in
 esac
 case "$ACC" in
   enable|disable|start|status|log) [ -z "$NOMBRE" ] || { echo "argumento no permitido" >&2; exit 2; } ;;
+  schedule)
+    [[ "$NOMBRE" =~ ^(diaria:[0-9]{2}:[0-9]{2}|intervalo:(minutos|horas):[0-9]{1,2}|semanal:(Mon|Tue|Wed|Thu|Fri|Sat|Sun):[0-9]{2}:[0-9]{2})$ ]] || { echo "horario no permitido" >&2; exit 2; } ;;
   files|mega-status|mega-files|espacio|mega-espacio|retencion)
     [ "$ID" = backup_inventario ] && [ -z "$NOMBRE" ] || { echo "accion invalida" >&2; exit 2; } ;;
   retencion-set)
@@ -26,6 +32,54 @@ case "$ACC" in
     [[ "$NOMBRE" =~ ^inventario_[0-9]{8}_[0-9]{4}\.bak$ ]] || { echo "nombre no permitido" >&2; exit 2; } ;;
   *) echo "accion invalida" >&2; exit 2 ;;
 esac
+
+# Token de horario -> OnCalendar (America/Costa_Rica). El .106 está en UTC.
+oncalendar_de_token() {
+  local t="$1"
+  if [[ "$t" =~ ^diaria:([0-9]{2}):([0-9]{2})$ ]]; then
+    local h="${BASH_REMATCH[1]}" m="${BASH_REMATCH[2]}"
+    [ $((10#$h)) -le 23 ] || return 2
+    printf '%s\n' "*-*-* ${h}:${m}:00 America/Costa_Rica"
+    return 0
+  fi
+  if [[ "$t" =~ ^intervalo:minutos:([0-9]{1,2})$ ]]; then
+    local n=$((10#${BASH_REMATCH[1]}))
+    [ "$n" -ge 1 ] && [ "$n" -le 59 ] || return 2
+    printf '%s\n' "*-*-* *:0/${n}:00 America/Costa_Rica"
+    return 0
+  fi
+  if [[ "$t" =~ ^intervalo:horas:([0-9]{1,2})$ ]]; then
+    local n=$((10#${BASH_REMATCH[1]}))
+    [ "$n" -ge 1 ] && [ "$n" -le 23 ] || return 2
+    printf '%s\n' "*-*-* 0/${n}:00:00 America/Costa_Rica"
+    return 0
+  fi
+  if [[ "$t" =~ ^semanal:(Mon|Tue|Wed|Thu|Fri|Sat|Sun):([0-9]{2}):([0-9]{2})$ ]]; then
+    local d="${BASH_REMATCH[1]}" h="${BASH_REMATCH[2]}" m="${BASH_REMATCH[3]}"
+    [ $((10#$h)) -le 23 ] || return 2
+    printf '%s\n' "${d} *-*-* ${h}:${m}:00 America/Costa_Rica"
+    return 0
+  fi
+  return 2
+}
+
+# Drop-in que reemplaza OnCalendar. Solo daemon-reload; no se reinicia el timer ni el servicio.
+aplicar_horario() {
+  local unit="$1" cal="$2"
+  local dir="/etc/systemd/system/${unit}.timer.d"
+  local dest="${dir}/horario.conf"
+  mkdir -p "$dir"
+  local tmp
+  tmp=$(mktemp "${dir}/horario.XXXXXX")
+  printf '%s\n' '[Timer]' 'OnCalendar=' "OnCalendar=${cal}" > "$tmp"
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$dest"
+  /usr/bin/systemctl daemon-reload
+  # No se reinicia el timer: en systemd 255, restart/try-restart dispara el servicio.
+  # daemon-reload recálcula NextElapse si el timer ya estaba activo; si está apagado, no se arranca.
+  echo "ONCALENDAR=${cal}"
+  /usr/bin/systemctl show "${unit}.timer" --no-pager -p ActiveState -p UnitFileState -p NextElapseUSecRealtime -p LastTriggerUSec -p TimersCalendar
+}
 
 if [ "$ID" = "backup_inventario" ]; then
   REMOTO="$ACC"
@@ -56,11 +110,15 @@ case "$ACC" in
     exec /usr/bin/systemctl start --no-block "${U}.service"
     ;;
   status)
-    /usr/bin/systemctl show "${U}.timer" --no-pager -p ActiveState -p UnitFileState -p NextElapseUSecRealtime -p LastTriggerUSec
+    /usr/bin/systemctl show "${U}.timer" --no-pager -p ActiveState -p UnitFileState -p NextElapseUSecRealtime -p LastTriggerUSec -p TimersCalendar
     echo '---SERVICE---'
     /usr/bin/systemctl show "${U}.service" --no-pager -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp
     echo '---LOG---'
     LOG="/var/log/lospaticas/${U#paticas-}.log"
     tail -n 40 "$LOG" 2>/dev/null || true
+    ;;
+  schedule)
+    CAL=$(oncalendar_de_token "$NOMBRE") || { echo "horario no permitido" >&2; exit 2; }
+    aplicar_horario "$U" "$CAL"
     ;;
 esac

@@ -1,0 +1,8 @@
+# Reglas a agregar en /etc/sudoers.d/paticas-tareas (www-data, NOPASSWD).
+# El tercer argumento lo valida paticas-tareas-ctl (token de horario).
+# No incluye enable, disable ni start.
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/paticas-tareas-ctl caja_correo schedule *
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/paticas-tareas-ctl mensajeria_update schedule *
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/paticas-tareas-ctl prefacturas_update schedule *
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/paticas-tareas-ctl actividades_comerciales schedule *
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/paticas-tareas-ctl backup_inventario schedule *

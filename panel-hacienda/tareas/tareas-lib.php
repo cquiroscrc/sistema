@@ -28,6 +28,171 @@ function ph_tareas_parse(string $text): array
     return [ph_fechas_local($timer), ph_fechas_local($svc), $log];
 }
 
+
+const PH_HORARIO_DIAS = [
+    'Mon' => 'lunes', 'Tue' => 'martes', 'Wed' => 'miércoles',
+    'Thu' => 'jueves', 'Fri' => 'viernes', 'Sat' => 'sábado', 'Sun' => 'domingo',
+];
+
+/** Normaliza HH:MM. */
+function ph_horario_hora(string $hora): ?string
+{
+    if (!preg_match('/^([0-9]{1,2}):([0-9]{2})$/', trim($hora), $m)) return null;
+    $h = (int)$m[1]; $min = (int)$m[2];
+    if ($h > 23 || $min > 59) return null;
+    return sprintf('%02d:%02d', $h, $min);
+}
+
+/** Arma el token que acepta paticas-tareas-ctl schedule. */
+function ph_horario_token(string $tipo, array $p): ?string
+{
+    $tipo = trim($tipo);
+    if ($tipo === 'diaria') {
+        $hora = ph_horario_hora((string)($p['hora'] ?? ''));
+        return $hora ? "diaria:$hora" : null;
+    }
+    if ($tipo === 'intervalo') {
+        $unidad = (string)($p['unidad'] ?? '');
+        if (!in_array($unidad, ['minutos', 'horas'], true)) return null;
+        if (!preg_match('/^[0-9]{1,2}$/', (string)($p['cada'] ?? ''))) return null;
+        $n = (int)$p['cada'];
+        if ($unidad === 'minutos' && ($n < 1 || $n > 59)) return null;
+        if ($unidad === 'horas' && ($n < 1 || $n > 23)) return null;
+        return "intervalo:$unidad:$n";
+    }
+    if ($tipo === 'semanal') {
+        $dia = (string)($p['dia'] ?? '');
+        $hora = ph_horario_hora((string)($p['hora'] ?? ''));
+        if (!isset(PH_HORARIO_DIAS[$dia]) || !$hora) return null;
+        return "semanal:$dia:$hora";
+    }
+    return null;
+}
+
+/** Token validado -> OnCalendar. */
+function ph_horario_oncalendar(string $token): ?string
+{
+    if (preg_match('/^diaria:([0-9]{2}):([0-9]{2})$/', $token, $m)) {
+        if ((int)$m[1] > 23) return null;
+        return "*-*-* {$m[1]}:{$m[2]}:00 America/Costa_Rica";
+    }
+    if (preg_match('/^intervalo:minutos:([0-9]{1,2})$/', $token, $m)) {
+        $n = (int)$m[1];
+        if ($n < 1 || $n > 59) return null;
+        return "*-*-* *:0/{$n}:00 America/Costa_Rica";
+    }
+    if (preg_match('/^intervalo:horas:([0-9]{1,2})$/', $token, $m)) {
+        $n = (int)$m[1];
+        if ($n < 1 || $n > 23) return null;
+        return "*-*-* 0/{$n}:00:00 America/Costa_Rica";
+    }
+    if (preg_match('/^semanal:(Mon|Tue|Wed|Thu|Fri|Sat|Sun):([0-9]{2}):([0-9]{2})$/', $token, $m)) {
+        if ((int)$m[2] > 23) return null;
+        return "{$m[1]} *-*-* {$m[2]}:{$m[3]}:00 America/Costa_Rica";
+    }
+    return null;
+}
+
+function ph_horario_texto(array $h): string
+{
+    $tipo = $h['tipo'] ?? '';
+    if ($tipo === 'diaria' && !empty($h['hora'])) return 'todos los días a las ' . $h['hora'];
+    if ($tipo === 'intervalo' && !empty($h['cada']) && !empty($h['unidad'])) {
+        $u = $h['unidad'] === 'horas' ? ((int)$h['cada'] === 1 ? 'hora' : 'horas') : ((int)$h['cada'] === 1 ? 'minuto' : 'minutos');
+        return 'cada ' . $h['cada'] . ' ' . $u;
+    }
+    if ($tipo === 'semanal' && !empty($h['dia']) && !empty($h['hora'])) {
+        $dia = PH_HORARIO_DIAS[$h['dia']] ?? $h['dia'];
+        return 'los ' . $dia . ' a las ' . $h['hora'];
+    }
+    return trim((string)($h['oncalendar'] ?? $h['texto'] ?? ''));
+}
+
+/** Interpreta TimersCalendar o una expresión OnCalendar. */
+function ph_horario_parse(?string $cal): array
+{
+    $raw = trim((string)$cal);
+    $expr = $raw;
+    if (preg_match('/OnCalendar=([^;]+)/', $raw, $m)) $expr = trim($m[1]);
+    $oncal = $expr;
+    $expr = preg_replace('/\s+America\/Costa_Rica$/', '', $expr) ?? $expr;
+    $expr = trim($expr);
+    $base = ['oncalendar' => $oncal];
+    if (preg_match('/^\*-\*-\* ([0-9]{2}):([0-9]{2}):00$/', $expr, $m)) {
+        $h = ['tipo' => 'diaria', 'hora' => $m[1] . ':' . $m[2]] + $base;
+        $h['texto'] = ph_horario_texto($h);
+        return $h;
+    }
+    if (preg_match('/^(?:\*-\*-\* )?\*:0*\/([0-9]{1,2})(?::00)?$/', $expr, $m)) {
+        $h = ['tipo' => 'intervalo', 'cada' => (int)$m[1], 'unidad' => 'minutos'] + $base;
+        $h['texto'] = ph_horario_texto($h);
+        return $h;
+    }
+    if (preg_match('/^(?:\*-\*-\* )?0\/([0-9]{1,2}):00:00$/', $expr, $m)) {
+        $h = ['tipo' => 'intervalo', 'cada' => (int)$m[1], 'unidad' => 'horas'] + $base;
+        $h['texto'] = ph_horario_texto($h);
+        return $h;
+    }
+    if (preg_match('/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \*-\*-\* ([0-9]{2}):([0-9]{2}):00$/', $expr, $m)) {
+        $h = ['tipo' => 'semanal', 'dia' => $m[1], 'hora' => $m[2] . ':' . $m[3]] + $base;
+        $h['texto'] = ph_horario_texto($h);
+        return $h;
+    }
+    return ['tipo' => 'otro', 'oncalendar' => $oncal, 'texto' => $oncal !== '' ? $oncal : '—'];
+}
+
+/** Próxima corrida según systemd-analyze (sin cambiar nada). */
+function ph_horario_preview(string $oncal): ?string
+{
+    $out = []; $rc = 0;
+    exec('/usr/bin/systemd-analyze calendar ' . escapeshellarg($oncal) . ' 2>/dev/null', $out, $rc);
+    foreach ($out as $l) {
+        if (preg_match('/Next elapse:\s+(.+)/', $l, $m)) return ph_fecha_local(trim($m[1]));
+    }
+    return null;
+}
+
+function ph_tarea_resultado(array $item): string
+{
+    if (!empty($item['corriendo'])) return 'en_curso';
+    $svc = $item['servicio'] ?? [];
+    $res = (string)($svc['Result'] ?? '');
+    $exit = trim((string)($svc['ExecMainExitTimestamp'] ?? ''));
+    $start = trim((string)($svc['ExecMainStartTimestamp'] ?? ''));
+    $last = trim((string)(($item['timer']['LastTriggerUSec'] ?? '')));
+    $vacio = static fn(string $s): bool => $s === '' || $s === 'n/a' || $s === '0' || $s === '—';
+    if ($vacio($exit) && $vacio($start) && $vacio($last)) return 'nunca';
+    if ($res === 'success' || $res === 'Success') return 'ok';
+    if ($res === '') return $vacio($exit) && $vacio($start) ? 'nunca' : 'ok';
+    return 'error';
+}
+
+function ph_tarea_ultima(array $item): string
+{
+    $svc = $item['servicio'] ?? [];
+    if (!empty($item['corriendo'])) {
+        $s = trim((string)($svc['ExecMainStartTimestamp'] ?? ''));
+        if ($s !== '') return $s;
+    }
+    foreach (['ExecMainExitTimestamp', 'ExecMainStartTimestamp'] as $k) {
+        $s = trim((string)($svc[$k] ?? ''));
+        if ($s !== '' && $s !== 'n/a' && $s !== '0') return $s;
+    }
+    $s = trim((string)($item['timer']['LastTriggerUSec'] ?? ''));
+    return ($s !== '' && $s !== 'n/a' && $s !== '0') ? $s : '';
+}
+
+function ph_tarea_enriquecer(array $item): array
+{
+    $horario = ph_horario_parse((string)($item['timer']['TimersCalendar'] ?? ''));
+    if (($horario['texto'] ?? '') !== '' && $horario['texto'] !== '—') $item['hora'] = $horario['texto'];
+    $item['horario'] = $horario;
+    $item['resultado'] = ph_tarea_resultado($item);
+    $item['ultima'] = ph_tarea_ultima($item);
+    $item['proxima'] = (string)($item['timer']['NextElapseUSecRealtime'] ?? '');
+    return $item;
+}
+
 function api_tareas(): array
 {
     $out = [];
@@ -37,13 +202,13 @@ function api_tareas(): array
         [$timer, $svc, $log] = ph_tareas_parse(implode("\n", $lines));
         if (in_array($d['id'], PH_TAREAS_HTML, true)) $log = ph_log_sin_html($log);
         $enabled = (($timer['UnitFileState'] ?? '') === 'enabled');
-        $item = $d + [
+        $item = ph_tarea_enriquecer($d + [
             'enabled' => $enabled,
             'corriendo' => (($svc['ActiveState'] ?? '') === 'activating'),
             'timer' => $timer,
             'servicio' => $svc,
             'log' => array_values(array_slice($log, -40)),
-        ];
+        ]);
         if ($rc !== 0 && !$timer) $item['log_error'] = 'No se pudo leer el estado (rc=' . $rc . ')';
         $out[] = $item;
     }
@@ -69,6 +234,90 @@ function api_tarea(): array
     $nombre = $defs[$id]['nombre'];
     ph_accion('tarea: ' . $nombre . ' ' . $verbos[$acc] . " (rc=$rc)", $rc === 0 ? 'Info' : 'Error');
     return ['ok' => $rc === 0, 'rc' => $rc, 'salida' => implode("\n", $out)];
+}
+
+function ph_horario_params_de_request(): array
+{
+    return [
+        'hora' => (string)($_REQUEST['hora'] ?? ''),
+        'cada' => (string)($_REQUEST['cada'] ?? ''),
+        'unidad' => (string)($_REQUEST['unidad'] ?? ''),
+        'dia' => (string)($_REQUEST['dia'] ?? ''),
+    ];
+}
+
+function api_tarea_horario_preview(): array
+{
+    $tipo = (string)($_GET['tipo'] ?? $_POST['tipo'] ?? '');
+    $token = ph_horario_token($tipo, ph_horario_params_de_request());
+    $oncal = $token ? ph_horario_oncalendar($token) : null;
+    if (!$oncal) return ['ok' => false, 'error' => 'Horario inválido'];
+    $proxima = ph_horario_preview($oncal);
+    $horario = ph_horario_parse($oncal);
+    return ['ok' => true, 'token' => $token, 'oncalendar' => $oncal, 'horario' => $horario, 'proxima' => $proxima, 'texto' => $horario['texto']];
+}
+
+function api_tarea_horario(): array
+{
+    $id = (string)($_POST['id'] ?? '');
+    $defs = [];
+    foreach (ph_tareas_defs() as $d) $defs[$d['id']] = $d;
+    if (!isset($defs[$id])) return ['ok' => false, 'error' => 'Tarea inválida'];
+    $tipo = (string)($_POST['tipo'] ?? '');
+    $token = ph_horario_token($tipo, ph_horario_params_de_request());
+    $oncal = $token ? ph_horario_oncalendar($token) : null;
+    if (!$oncal) return ['ok' => false, 'error' => 'Horario inválido'];
+    $antes = '';
+    $lines = []; $rc = 0;
+    exec('/usr/bin/sudo -n /usr/local/sbin/paticas-tareas-ctl ' . escapeshellarg($id) . ' status 2>&1', $lines, $rc);
+    if ($rc === 0) {
+        [$timer] = ph_tareas_parse(implode("\n", $lines));
+        $antes = ph_horario_parse((string)($timer['TimersCalendar'] ?? ''))['texto'] ?? '';
+    }
+    $out = []; $rc = 0;
+    exec('/usr/bin/sudo -n /usr/local/sbin/paticas-tareas-ctl ' . escapeshellarg($id) . ' schedule ' . escapeshellarg($token) . ' 2>&1', $out, $rc);
+    $horario = ph_horario_parse($oncal);
+    $timer = [];
+    if ($rc === 0) [$timer] = ph_tareas_parse(implode("\n", $out));
+    if ($rc === 0 && !empty($timer['TimersCalendar'])) $horario = ph_horario_parse((string)$timer['TimersCalendar']);
+    $proxima = (string)($timer['NextElapseUSecRealtime'] ?? '');
+    if ($proxima === '') $proxima = (string)(ph_horario_preview($oncal) ?? '');
+    $nombre = $defs[$id]['nombre'];
+    $texto = $horario['texto'] ?? $oncal;
+    $msg = 'tarea: ' . $nombre . ' horario ' . ($antes !== '' ? $antes . ' → ' : '') . $texto;
+    if ($proxima !== '') $msg .= ' (próxima: ' . $proxima . ')';
+    $msg .= " (rc=$rc)";
+    ph_accion($msg, $rc === 0 ? 'Info' : 'Error');
+    if ($rc !== 0) return ['ok' => false, 'error' => 'No se pudo cambiar el horario', 'salida' => implode("\n", $out), 'rc' => $rc];
+    return [
+        'ok' => true,
+        'horario' => $horario,
+        'texto' => $texto,
+        'proxima' => $proxima,
+        'timer' => $timer,
+        'enabled' => (($timer['UnitFileState'] ?? '') === 'enabled'),
+        'activa' => (($timer['ActiveState'] ?? '') === 'active'),
+    ];
+}
+
+/** Resumen compacto para el Dashboard (sin el registro). */
+function ph_tareas_resumen(): array
+{
+    $r = api_tareas();
+    $out = [];
+    foreach ($r['tareas'] as $t) {
+        $out[] = [
+            'id' => $t['id'],
+            'nombre' => $t['nombre'],
+            'enabled' => !empty($t['enabled']),
+            'corriendo' => !empty($t['corriendo']),
+            'resultado' => $t['resultado'] ?? 'nunca',
+            'ultima' => $t['ultima'] ?? '',
+            'proxima' => $t['proxima'] ?? '',
+            'hora' => $t['hora'] ?? '',
+        ];
+    }
+    return $out;
 }
 
 function ph_log_normalizar(string $texto): array

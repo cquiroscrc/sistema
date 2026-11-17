@@ -2,22 +2,37 @@ import { useEffect, useId, useState } from 'react';
 import { CalendarClock, Play, Square, Zap, AlertTriangle, HardDrive, Settings, Send, Info, Receipt, MessageSquare, Eraser, Briefcase, Database, type LucideIcon } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
-import { Button, Card, CardBody, Input, Modal, useToast } from '../components/ui';
+import { Button, Card, CardBody, Input, Modal, Select, useToast } from '../components/ui';
 import RespaldosModal from '../components/RespaldosModal';
 import CajaConfigModal from '../components/CajaConfigModal';
 import CajaTestModal from '../components/CajaTestModal';
 
 type Accion = 'enable' | 'disable' | 'start';
-type Tarea = {
+export type Horario = {
+  tipo: 'diaria' | 'intervalo' | 'semanal' | 'otro';
+  hora?: string;
+  cada?: number;
+  unidad?: 'minutos' | 'horas';
+  dia?: string;
+  oncalendar?: string;
+  texto?: string;
+};
+export type Tarea = {
   id: string; nombre: string; descripcion: string; hora: string; servidor: string;
   enabled: boolean; corriendo: boolean; timer: Record<string, string>; servicio: Record<string, string>;
   log: string[]; log_error?: string;
+  horario?: Horario; resultado?: string; ultima?: string; proxima?: string;
 };
 
 const PALABRA: Record<Accion, string> = { enable: 'ACTIVAR', disable: 'DESACTIVAR', start: 'EJECUTAR' };
-const CLAVE_TAB = 'panel.tareas.tab';
+export const CLAVE_TAB = 'panel.tareas.tab';
 const ICONO: Record<string, LucideIcon> = { caja_correo: Receipt, mensajeria_update: MessageSquare, prefacturas_update: Eraser, actividades_comerciales: Briefcase, backup_inventario: Database };
 const iconoDe = (id: string): LucideIcon => ICONO[id] ?? CalendarClock;
+const DIAS: { id: string; label: string }[] = [
+  { id: 'Mon', label: 'lunes' }, { id: 'Tue', label: 'martes' }, { id: 'Wed', label: 'miércoles' },
+  { id: 'Thu', label: 'jueves' }, { id: 'Fri', label: 'viernes' }, { id: 'Sat', label: 'sábado' }, { id: 'Sun', label: 'domingo' },
+];
+const sel = 'w-auto min-w-0';
 
 function filtrarLog(lineas: string[], fecha: string, consulta: string): string[] {
   let bloque = '';
@@ -97,20 +112,21 @@ function Registro({ tarea }: { tarea: Tarea }) {
   </div>;
 }
 
-function avisoCorrida(id: string): string {
-  switch (id) {
+function avisoCorrida(t: Tarea): string {
+  const hora = t.horario?.texto || t.hora;
+  switch (t.id) {
     case 'caja_correo':
-      return 'Se envía ahora el correo de cierre de caja. El horario de las 17:15 no cambia. Si la tarea de Windows también lo envía hoy, el destinatario lo recibe dos veces.';
+      return `Se envía ahora el correo de cierre de caja. El horario (${hora}) no cambia. Si la tarea de Windows también lo envía hoy, el destinatario lo recibe dos veces.`;
     case 'mensajeria_update':
-      return 'Se restablecen ahora las existencias de mensajería. El horario de las 17:28 no cambia.';
+      return `Se restablecen ahora las existencias de mensajería. El horario (${hora}) no cambia.`;
     case 'prefacturas_update':
-      return 'Se borran ahora las prefacturas temporales. El horario de las 17:48 no cambia.';
+      return `Se borran ahora las prefacturas temporales. El horario (${hora}) no cambia.`;
     case 'actividades_comerciales':
-      return 'Se ejecuta ahora una corrida del actualizador de actividades comerciales. Si ya hay una en curso se omite. El horario (cada 5 minutos) no cambia.';
+      return `Se ejecuta ahora una corrida del actualizador de actividades comerciales. Si ya hay una en curso se omite. El horario (${hora}) no cambia.`;
     case 'backup_inventario':
-      return 'Se inicia ahora el respaldo de la base inventario en pat-sql-web01. Puede tardar y, al terminar, sube el archivo a MEGA. El horario de las 18:00 no cambia.';
+      return `Se inicia ahora el respaldo de la base inventario en pat-sql-web01. Puede tardar y, al terminar, sube el archivo a MEGA. El horario (${hora}) no cambia.`;
     default:
-      return 'Se ejecuta ahora. El horario programado no cambia.';
+      return `Se ejecuta ahora. El horario programado (${hora}) no cambia.`;
   }
 }
 
@@ -135,6 +151,109 @@ const estadoClase = (t: Tarea) => (t.corriendo ? 'bg-info/10 text-info ring-info
 function Insignia({ t }: { t: Tarea }) {
   return <span className={cn('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset', estadoClase(t))}>
     <span className={cn('h-2 w-2 rounded-full', t.corriendo || t.enabled ? 'bg-current animate-pulse' : 'bg-muted-foreground')} />{estadoTexto(t)}</span>;
+}
+
+type FormHorario = { tipo: 'diaria' | 'intervalo' | 'semanal'; hora: string; cada: string; unidad: 'minutos' | 'horas'; dia: string };
+
+function deHorario(h?: Horario): FormHorario {
+  const tipo = h?.tipo === 'intervalo' || h?.tipo === 'semanal' ? h.tipo : 'diaria';
+  return {
+    tipo,
+    hora: h?.hora || '17:00',
+    cada: String(h?.cada ?? (tipo === 'intervalo' ? 5 : 1)),
+    unidad: h?.unidad === 'horas' ? 'horas' : 'minutos',
+    dia: h?.dia && DIAS.some(d => d.id === h.dia) ? h.dia : 'Mon',
+  };
+}
+
+function igualHorario(a: FormHorario, b: FormHorario): boolean {
+  if (a.tipo !== b.tipo) return false;
+  if (a.tipo === 'diaria') return a.hora === b.hora;
+  if (a.tipo === 'intervalo') return a.cada === b.cada && a.unidad === b.unidad;
+  return a.dia === b.dia && a.hora === b.hora;
+}
+
+function HorarioEditor({ tarea, onGuardado }: { tarea: Tarea; onGuardado: () => void }) {
+  const toast = useToast();
+  const original = deHorario(tarea.horario);
+  const [form, setForm] = useState<FormHorario>(original);
+  const [proxima, setProxima] = useState(tarea.proxima || '');
+  const [texto, setTexto] = useState(tarea.horario?.texto || tarea.hora || '');
+  const [error, setError] = useState('');
+  const [cargando, setCargando] = useState(false);
+  const [confirmar, setConfirmar] = useState(false);
+  const sucio = !igualHorario(form, original);
+
+  useEffect(() => { setForm(deHorario(tarea.horario)); setProxima(tarea.proxima || ''); setTexto(tarea.horario?.texto || tarea.hora || ''); setError(''); setConfirmar(false); }, [tarea.id, tarea.horario?.oncalendar, tarea.proxima]);
+
+  useEffect(() => {
+    let vivo = true;
+    const id = window.setTimeout(() => {
+      api('tarea_horario_preview', { tipo: form.tipo, hora: form.hora, cada: form.cada, unidad: form.unidad, dia: form.dia }).then(j => {
+        if (!vivo) return;
+        if (j.ok) { setProxima(j.proxima || ''); setTexto(j.texto || ''); setError(''); }
+        else { setError(j.error || 'Horario inválido'); setProxima(''); }
+      }).catch(() => { if (vivo) setError('No se pudo calcular la próxima ejecución'); });
+    }, 250);
+    return () => { vivo = false; window.clearTimeout(id); };
+  }, [form.tipo, form.hora, form.cada, form.unidad, form.dia]);
+
+  const guardar = async () => {
+    setCargando(true);
+    try {
+      const j = await api('tarea_horario', {}, { id: tarea.id, tipo: form.tipo, hora: form.hora, cada: form.cada, unidad: form.unidad, dia: form.dia });
+      if (j.ok) {
+        toast('ok', `Horario guardado · próxima: ${j.proxima || '—'}`);
+        setConfirmar(false);
+        onGuardado();
+      } else toast('error', j.error || j.salida || 'No se pudo guardar');
+    } finally { setCargando(false); }
+  };
+
+  return <>
+    <div className="rounded-lg border p-3">
+      <div className="flex flex-nowrap items-end gap-2 overflow-x-auto">
+        <label className="shrink-0 text-xs font-medium text-muted-foreground">Periodicidad
+          <Select className={cn('mt-1', sel)} value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value as FormHorario['tipo'] }))}>
+            <option value="diaria">Diaria</option>
+            <option value="intervalo">Cada intervalo</option>
+            <option value="semanal">Semanal</option>
+          </Select>
+        </label>
+        {form.tipo === 'semanal' && <label className="shrink-0 text-xs font-medium text-muted-foreground">Día
+          <Select className={cn('mt-1', sel)} value={form.dia} onChange={e => setForm(f => ({ ...f, dia: e.target.value }))}>
+            {DIAS.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+          </Select>
+        </label>}
+        {form.tipo === 'intervalo' ? <>
+          <label className="shrink-0 text-xs font-medium text-muted-foreground">Cada
+            <Input type="number" min={1} max={form.unidad === 'horas' ? 23 : 59} value={form.cada} onChange={e => setForm(f => ({ ...f, cada: e.target.value }))} className="mt-1 w-16" />
+          </label>
+          <label className="shrink-0 text-xs font-medium text-muted-foreground">Unidad
+            <Select className={cn('mt-1', sel)} value={form.unidad} onChange={e => setForm(f => ({ ...f, unidad: e.target.value as 'minutos' | 'horas' }))}>
+              <option value="minutos">minutos</option>
+              <option value="horas">horas</option>
+            </Select>
+          </label>
+        </> : <label className="shrink-0 text-xs font-medium text-muted-foreground">Hora
+          <Input type="time" step={60} value={form.hora} onChange={e => setForm(f => ({ ...f, hora: e.target.value }))} className="mt-1 w-[7.5rem]" />
+        </label>}
+        <Button className="shrink-0" disabled={!sucio || !!error || cargando} onClick={() => setConfirmar(true)}>Guardar horario</Button>
+        {sucio && <Button variant="ghost" className="shrink-0" onClick={() => setForm(original)}>Deshacer</Button>}
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        {error ? <span className="text-danger">{error}</span> : <>{texto || '—'}{proxima ? ` · próxima ejecución: ${proxima}` : ''}{!tarea.enabled ? ' · el timer está deshabilitado; el cambio queda guardado y no lo activa' : ''}</>}
+      </p>
+    </div>
+    <Modal open={confirmar} onClose={() => setConfirmar(false)} title={`Cambiar horario de ${tarea.nombre}`}
+      footer={<><Button variant="outline" onClick={() => setConfirmar(false)}>Cancelar</Button>
+        <Button loading={cargando} disabled={!!error} onClick={guardar}>Guardar</Button></>}>
+      <div className="space-y-2 text-sm">
+        <p>Quedará {texto || 'con el horario indicado'}{proxima ? ` (próxima ejecución: ${proxima})` : ''}.</p>
+        <p className="text-muted-foreground">No se ejecuta la tarea ahora. El timer sigue {tarea.enabled ? 'habilitado' : 'deshabilitado'}.</p>
+      </div>
+    </Modal>
+  </>;
 }
 
 export default function Tareas({ onCambio }: { onCambio?: () => void }) {
@@ -190,6 +309,7 @@ export default function Tareas({ onCambio }: { onCambio?: () => void }) {
           {dato('Resultado', `${t.servicio.Result || '—'} (código ${t.servicio.ExecMainStatus ?? '—'})`)}
           {dato('Inicio / fin', <>{t.servicio.ExecMainStartTimestamp || '—'}{t.servicio.ExecMainExitTimestamp ? <><br />{t.servicio.ExecMainExitTimestamp}</> : null}</>)}
         </div>
+        <HorarioEditor key={t.id} tarea={t} onGuardado={() => { cargar(); onCambio?.(); }} />
         <div className="flex flex-wrap gap-3">
           <Button variant="outline" disabled={t.corriendo} onClick={() => { setPalabra(''); setModal({ id: t.id, acc: 'start', nombre: t.nombre }); }}><Zap className="h-4 w-4" />{t.corriendo ? 'En curso' : 'Ejecutar ahora'}</Button>
           <Button variant="success" disabled={t.enabled} onClick={() => { setPalabra(''); setModal({ id: t.id, acc: 'enable', nombre: t.nombre }); }}><Play className="h-4 w-4" />Activar</Button>
@@ -214,7 +334,7 @@ export default function Tareas({ onCambio }: { onCambio?: () => void }) {
         </Button></>}>
       {modal?.acc === 'start'
         ? <div className="space-y-3">
-            <p>{avisoCorrida(modal.id)}</p>
+            <p>{t ? avisoCorrida(t) : ''}</p>
             <div><label className="mb-1 block text-xs font-medium">Escriba <b>EJECUTAR</b> para confirmar</label><Input value={palabra} onChange={e => setPalabra(e.target.value)} autoFocus placeholder="EJECUTAR" /></div>
           </div>
         : modal?.acc === 'enable'

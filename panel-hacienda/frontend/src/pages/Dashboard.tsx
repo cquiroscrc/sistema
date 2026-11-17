@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, XOctagon, Hourglass, Power, CheckCircle2, Clock, ArrowRight } from 'lucide-react';
+import { Send, XOctagon, Hourglass, Power, CheckCircle2, Clock, ArrowRight, XCircle, Loader2, MinusCircle, CalendarClock } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, type DocRow, type Status } from '../lib/api';
 import { useMantenerSesion } from '../lib/keepalive';
@@ -7,6 +7,15 @@ import { cn, fmtMonto, fmtNum } from '../lib/utils';
 import { Card, CardBody, CardHeader, CardTitle, EstadoBadge, Empty, Spinner, Tabs, Switch } from '../components/ui';
 import type { Vista } from '../App';
 import Espacio from '../components/Espacio';
+import { CLAVE_TAB } from './Tareas';
+
+
+const TAREA_ICONO: Record<string, { Icon: typeof CheckCircle2; clase: string; label: string }> = {
+  ok: { Icon: CheckCircle2, clase: 'text-success', label: 'Correcta' },
+  error: { Icon: XCircle, clase: 'text-danger', label: 'Error' },
+  en_curso: { Icon: Loader2, clase: 'text-info animate-spin', label: 'En curso' },
+  nunca: { Icon: MinusCircle, clase: 'text-muted-foreground', label: 'Nunca ejecutada' },
+};
 
 function Kpi({ titulo, valor, sub, icon: Icon, tono }: { titulo: string; valor: React.ReactNode; sub?: React.ReactNode; icon: any; tono: 'primary' | 'danger' | 'warning' | 'success' | 'muted' }) {
   const t = { primary: 'bg-primary/10 text-primary', danger: 'bg-danger/10 text-danger', warning: 'bg-warning/15 text-warning', success: 'bg-success/10 text-success', muted: 'bg-muted text-muted-foreground' }[tono];
@@ -19,6 +28,7 @@ export default function Dashboard({ status, ir, onStatus }: { status: Status | n
   const [dias, setDias] = useState<'14' | '30' | '90'>('30');
   const [serie, setSerie] = useState<any[] | null>(null);
   const [recientes, setRecientes] = useState<DocRow[] | null>(null);
+  const [tareas, setTareas] = useState<{ id: string; nombre: string; resultado: string; ultima: string; proxima: string; hora?: string; enabled?: boolean; corriendo?: boolean }[] | null>(null);
   const [auto, setAuto] = useState(() => { try { return localStorage.getItem('ph-resumen-auto') !== 'off'; } catch { return true; } });
   const [actualizado, setActualizado] = useState<Date | null>(null);
   const [fallo, setFallo] = useState(false);
@@ -37,7 +47,7 @@ export default function Dashboard({ status, ir, onStatus }: { status: Status | n
         const j = await api('resumen', { dias: periodo });
         if (vivo && periodo === valores.current.dias) {
           if (!j.ok) throw new Error('refresh');
-          valores.current.onStatus(j.status); setSerie(j.serie ?? []); setRecientes(j.recientes ?? []);
+          valores.current.onStatus(j.status); setSerie(j.serie ?? []); setRecientes(j.recientes ?? []); setTareas(j.tareas ?? []);
           setActualizado(new Date()); setFallo(false);
         }
       } catch { if (vivo) setFallo(true); /* conservar los datos anteriores; api mantiene el manejo de 401 */ }
@@ -98,6 +108,25 @@ export default function Dashboard({ status, ir, onStatus }: { status: Status | n
           </div>)}</div>
       </Card>
     </div>
+    <Card>
+      <CardHeader><CardTitle>Tareas programadas</CardTitle><button onClick={() => ir('tareas')} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">Ver todas<ArrowRight className="h-3 w-3" /></button></CardHeader>
+      <div className="divide-y">{!tareas ? <div className="p-6"><Spinner /></div> : !tareas.length ? <Empty>Sin tareas.</Empty> : tareas.map(t => {
+        const r = TAREA_ICONO[t.resultado] ?? TAREA_ICONO.nunca;
+        const Icono = r.Icon;
+        return <button key={t.id} type="button" onClick={() => { try { localStorage.setItem(CLAVE_TAB, t.id); } catch {} ir('tareas'); }}
+          className="flex w-full items-center gap-3 px-5 py-2.5 text-left hover:bg-muted/50">
+          <Icono className={cn('h-5 w-5 shrink-0', r.clase)} aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span className="text-sm font-medium">{t.nombre}</span>
+              <span className={cn('text-xs font-medium', r.clase)}>{r.label}</span>
+            </div>
+            <div className="truncate text-xs text-muted-foreground">Última: {t.ultima || 'Nunca'} · Próxima: {t.proxima || '—'}</div>
+          </div>
+          <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </button>;
+      })}</div>
+    </Card>
     <Espacio />
     <div className="grid gap-4 md:grid-cols-3">
       <Card className="p-4 text-sm"><div className="flex items-center gap-2 text-muted-foreground"><Clock className="h-4 w-4" />Última bitácora</div><div className="mt-1 font-medium tabular-nums">{status?.ultima_bitacora || '—'}</div></Card>

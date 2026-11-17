@@ -55,6 +55,8 @@ try {
         case 'tareas':   ph_json(api_tareas());
         case 'tarea_log': ph_json(api_tarea_log());
         case 'tarea':    ph_require_post(); ph_json(api_tarea());
+        case 'tarea_horario': ph_require_post(); ph_json(api_tarea_horario());
+        case 'tarea_horario_preview': ph_json(api_tarea_horario_preview());
         case 'config_correo':         ph_json(api_config_correo());
         case 'config_correo_guardar': ph_require_post(); ph_json(api_config_correo_guardar());
         case 'config_correo_probar':  ph_require_post(); ph_json(api_config_correo_probar());
@@ -970,5 +972,5 @@ function api_resumen(): array
     $g = api_grafico();
     $_GET['estado'] = 'rechazado'; $_GET['size'] = '6'; $_GET['page'] = '1';
     $d = api_docs();
-    return ['ok' => true, 'status' => $s, 'serie' => $g['rows'] ?? [], 'recientes' => array_slice($d['rows'] ?? [], 0, 6)];
+    return ['ok' => true, 'status' => $s, 'serie' => $g['rows'] ?? [], 'recientes' => array_slice($d['rows'] ?? [], 0, 6), 'tareas' => ph_tareas_resumen()];
 }
