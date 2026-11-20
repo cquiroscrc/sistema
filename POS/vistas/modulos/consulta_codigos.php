@@ -36,39 +36,48 @@ if ($codigo != "") {
     $codigo = strtoupper($codigo);
     //// *************** Incluye la consulta ******************
 
+    $where = "";
     if (substr($codigo, 0, 1) == 1) { // vw
-        $sql = "SELECT * FROM inventario WHERE codigo like '$codigo%' 
+        $where = "codigo like '$codigo%'";
+        $sql = "SELECT * FROM inventario WHERE $where 
           order by substring(Codigo,1,1),substring(Codigo,5,4), 
           substring(Codigo,9,4),substring(Codigo,1,4),substring(Codigo,13,12)";
     } elseif (substr($codigo, 0, 1) == 0) { // vw
-        $sql = "SELECT * FROM inventario WHERE codigo like '$codigo%' 
+        $where = "codigo like '$codigo%'";
+        $sql = "SELECT * FROM inventario WHERE $where 
           order by substring(Codigo,1,1),substring(Codigo,5,4), 
           substring(Codigo,9,4),substring(Codigo,1,4),substring(Codigo,13,12)";
     } elseif (substr($codigo, 0, 1) == 2) {
-        $sql = "SELECT * FROM inventario WHERE codigo like '$codigo%' 
+        $where = "codigo like '$codigo%'";
+        $sql = "SELECT * FROM inventario WHERE $where 
           order by codigo";
     } elseif (substr($codigo, 0, 1) == 3) {
-        $sql = "SELECT * FROM inventario WHERE codigo like '$codigo%' 
+        $where = "codigo like '$codigo%'";
+        $sql = "SELECT * FROM inventario WHERE $where 
           order by codigo";
     } elseif (substr($codigo, 0, 1) == 4) {
-        $sql = "SELECT * FROM inventario WHERE codigo like '$codigo%' 
+        $where = "codigo like '$codigo%'";
+        $sql = "SELECT * FROM inventario WHERE $where 
           order by codigo";
     } elseif (substr($codigo, 0, 1) == 5) {
         $fam = 1;
         $des = substr($codigo, 1, strlen($codigo));
         $codigo = $fam . '___ ' . $des;
 
-        $sql = "SELECT * FROM inventario WHERE codigo like '$codigo%' 
+        $where = "codigo like '$codigo%'";
+        $sql = "SELECT * FROM inventario WHERE $where 
           order by substring(Codigo,1,1),substring(Codigo,5,4), 
           substring(Codigo,9,4),substring(Codigo,1,4),substring(Codigo,13,12)";
     } elseif (substr($codigo, 0, 1) == 9) {
-        $sql = "SELECT * FROM inventario WHERE codigo like '$codigo%' 
+        $where = "codigo like '$codigo%'";
+        $sql = "SELECT * FROM inventario WHERE $where 
           order by codigo";
     } elseif (substr($codigo, 0, 1) == 6) {
         $fam = substr($codigo, 1, 1);
         $des = substr($codigo, 2, strlen($codigo));
-        $sql = "SELECT * FROM inventario WHERE codigo like '$fam%' 
-           AND descripcion like '%$des%' OR DESC_ALT like '%$des%' AND codigo like '$fam%' order by descripcion";
+        $where = "codigo like '$fam%' 
+           AND descripcion like '%$des%' OR DESC_ALT like '%$des%' AND codigo like '$fam%'";
+        $sql = "SELECT * FROM inventario WHERE $where order by descripcion";
     }
 
 
@@ -110,9 +119,88 @@ if ($codigo != "") {
 
 
     $ejecutar = ControladorUtilitaria::ctrMostrarUtilitariaVar($sql);
+    if (!is_array($ejecutar)) {
+        $ejecutar = [];
+    }
+
+    $mapaPromedio = [];
+    $mapaPedido = [];
+    $mapaPedidoDetalle = [];
+    $mapaSucursal = [];
+    $mapaProveedor = [];
+    $mapaCabys = [];
+
+    if (!empty($where) && count($ejecutar) > 0) {
+        $subCodigos = "SELECT codigo FROM inventario WHERE $where";
+
+        $respuesta = ControladorUtilitaria::ctrMostrarUtilitariaVar(
+            "SELECT codigo, (SUM(cantidad)/6) as promedio from hgeneral where codigo in ($subCodigos)
+                AND movimiento not in('Ajuste') AND
+                substring(factura,1,2)='F-' AND
+                FECHA >= Dateadd(mm,-6,Getdate()) AND
+                FECHA <= GETDATE()
+                GROUP BY codigo"
+        );
+        if (is_array($respuesta)) {
+            foreach ($respuesta as $valor) {
+                $mapaPromedio[rtrim($valor["codigo"])] = $valor["promedio"];
+            }
+        }
+
+        $respuesta = ControladorUtilitaria::ctrMostrarUtilitariaVar(
+            "SELECT codigo, SUM(cantidad) as pedido from pedidos where codigo in ($subCodigos) GROUP BY codigo"
+        );
+        if (is_array($respuesta)) {
+            foreach ($respuesta as $valor) {
+                $mapaPedido[rtrim($valor["codigo"])] = $valor["pedido"];
+            }
+        }
+
+        $respuesta = ControladorUtilitaria::ctrMostrarUtilitariaVar(
+            "SELECT p.codigo, p.Factura, p.Cantidad, t.shortname from pedidos p, Proveedores t where p.Proveedor=t.codigo and p.codigo in ($subCodigos)"
+        );
+        if (is_array($respuesta)) {
+            foreach ($respuesta as $arr_ped) {
+                $clavePedido = rtrim($arr_ped["codigo"]);
+                if (!isset($mapaPedidoDetalle[$clavePedido])) {
+                    $mapaPedidoDetalle[$clavePedido] = "";
+                }
+                $mapaPedidoDetalle[$clavePedido] .= trim($arr_ped['shortname']) . " / " . $arr_ped['Factura'] . " / " . $arr_ped['Cantidad'] . " *-* ";
+            }
+        }
+
+        $respuesta = ControladorUtilitaria::ctrMostrarUtilitariaVar(
+            "SELECT codigo, cantidad FROM tbl_exi_suc WHERE codigo in ($subCodigos)"
+        );
+        if (is_array($respuesta)) {
+            foreach ($respuesta as $arr_suc) {
+                $mapaSucursal[rtrim($arr_suc["codigo"])] = $arr_suc["cantidad"];
+            }
+        }
+
+        $respuesta = ControladorUtilitaria::ctrMostrarUtilitariaVar(
+            "SELECT codigo, shortname FROM Proveedores WHERE codigo in (SELECT proveedor FROM inventario WHERE $where)"
+        );
+        if (is_array($respuesta)) {
+            foreach ($respuesta as $valor) {
+                $mapaProveedor[rtrim($valor["codigo"])] = $valor["shortname"];
+            }
+        }
+
+        $respuesta = ControladorUtilitaria::ctrMostrarUtilitariaVar(
+            "SELECT Codigo, Descripcion FROM DE_CABYS WHERE Codigo in (SELECT CODIGO_CABYS FROM inventario WHERE $where)"
+        );
+        if (is_array($respuesta)) {
+            foreach ($respuesta as $valor) {
+                $mapaCabys[rtrim($valor["Codigo"])] = $valor["Descripcion"];
+            }
+        }
+    }
+
     $i = 1;
     foreach ($ejecutar as $key => $arr) {
         $codigos = $arr["CODIGO"];
+        $claveCodigo = rtrim($codigos);
         $descripcion = $arr["DESCRIPCION"];
         $existencia = $arr["EXISTENCIA"];
         $costo = $arr["COSTO"];
@@ -136,78 +224,22 @@ if ($codigo != "") {
         } else {
             echo '<td style="color:blue;"><b>' . number_format($existencia, 2) . '</b></td>';
         }
-        //PROMEDIO
-        /// aqui val el valor de estudio, cantidad de meses tambien en moviemientos.php
-        $consulta = "SELECT (SUM(cantidad)/6) as promedio from hgeneral where codigo = '$codigos' 
-                AND movimiento not in('Ajuste') AND 
-                substring(factura,1,2)='F-' AND 
-                FECHA >= Dateadd(mm,-6,Getdate())AND  
-                FECHA <= GETDATE()";
-        $promedio = 0;
-        $respuesta = ControladorUtilitaria::ctrMostrarUtilitariaVar($consulta);
-
-        foreach ($respuesta as $key => $valor) {
-            $promedio = $valor["promedio"];
-        }
+        // Promedio de los ultimos 6 meses. Se calcula una sola vez para todo el resultado.
+        $promedio = array_key_exists($claveCodigo, $mapaPromedio) ? $mapaPromedio[$claveCodigo] : 0;
         echo '<td style="color:maroon;"><b>' . number_format($promedio, 2) . '</b></td>';
-        // TRANSITO
-        $consulta = "SELECT SUM(cantidad) as pedido from pedidos where codigo = '$codigos'";
-        $respuesta = ControladorUtilitaria::ctrMostrarUtilitariaVar($consulta);
-        foreach ($respuesta as $key => $valor) {
-            $pedidos = $valor["pedido"];
-        }
-        /// Pedidos por separado
-        $ped_totales = "";
-        unset($ped_factura);
-        $sqlped = "SELECT p.Factura, p.Cantidad, t.shortname from pedidos p, Proveedores t where p.Proveedor=t.codigo and p.codigo = '$codigos'";
-
-        $res_pedi2 = ControladorUtilitaria::ctrMostrarUtilitariaVar($sqlped);
-        $cont = 0;
-        foreach ($res_pedi2 as $key => $arr_ped) {
-
-            $ped_factura[] = trim($arr_ped['shortname']) . " / " . $arr_ped['Factura'] . " / " . $arr_ped['Cantidad'] . " *-* ";
-            $cont++;
-        }
-        if (isset($ped_factura)) {
-            if ($cont == 0) {
-                $ped_totales = $ped_factura[0];
-            } else {
-                for ($x = 0; $x < $cont; $x++) {
-                    $ped_totales = $ped_totales . $ped_factura[$x];
-                }
-            }
-
-        } else {
-            $ped_totales = "";
-        }
-
+        $pedidos = array_key_exists($claveCodigo, $mapaPedido) ? $mapaPedido[$claveCodigo] : 0;
+        $ped_totales = isset($mapaPedidoDetalle[$claveCodigo]) ? $mapaPedidoDetalle[$claveCodigo] : "";
 
         echo '<td><a name="' . $codigos . '" id="a"></a><a style="color:green;" data-toggle="tooltip" title="' . $ped_totales . '"><b>' . number_format($pedidos, 2) . '</b></a></td>';
-        //Sucursal o Bodega
-        $sqlsuc = "SELECT * FROM tbl_exi_suc WHERE codigo = '$codigos'";
-        $sucursal = 0;
-        $ressuc = ControladorUtilitaria::ctrMostrarUtilitariaVar($sqlsuc);
-
-        foreach ($ressuc as $key => $arr_suc) {
-            $sucursal = $arr_suc["cantidad"];
-        }
+        $sucursal = isset($mapaSucursal[$claveCodigo]) ? $mapaSucursal[$claveCodigo] : 0;
         echo '<td style="color:orange"><b>' . $sucursal . '</b></td>';
         echo '<td>' . $venta . '</td>';
         echo '<td>' . $costo . '</td>';
         echo '<td>' . $costodol . '</td>';
-        //NOMBRE DEL PROVEEDOR
-        $consulta = "SELECT codigo, shortname FROM Proveedores WHERE codigo='$proveedor'";
-        $respuesta = ControladorUtilitaria::ctrMostrarUtilitariaVar($consulta);
-        $nombre_prove = "Local";
-        foreach ($respuesta as $key => $valor) {
-            $nombre_prove = $valor["shortname"];
-        }
-        $nombre_cabys='N/A';
-        $consulta = "SELECT Codigo, Descripcion FROM DE_CABYS WHERE Codigo='$cabys'";
-        $respuesta = ControladorUtilitaria::ctrMostrarUtilitariaVar($consulta);
-        foreach ($respuesta as $key => $valor) {
-            $nombre_cabys = $valor["Descripcion"];
-        }
+        $claveProveedor = rtrim((string) $proveedor);
+        $nombre_prove = array_key_exists($claveProveedor, $mapaProveedor) ? $mapaProveedor[$claveProveedor] : "Local";
+        $claveCabys = rtrim((string) $cabys);
+        $nombre_cabys = array_key_exists($claveCabys, $mapaCabys) ? $mapaCabys[$claveCabys] : "N/A";
 
 
         echo '<td>' . $nombre_prove . '</td>';
