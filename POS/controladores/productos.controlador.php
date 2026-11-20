@@ -92,6 +92,7 @@ class ControladorProductos{
 							   "proveedor" => $_POST["editarProveedor"],
 							   "ubicacion" => $_POST["editarUbicacion"],
 							   "potencia" => $_POST["editarPotencia"],
+							   "cabys" => $_POST["editarCabys"],
 							   "Carro" => $_SESSION["usuario"]);
 
 				$respuesta = ModeloProductos::mdlEditarProducto($tabla, $datos);

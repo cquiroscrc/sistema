@@ -31,7 +31,7 @@ if($_SESSION["perfil"] == "caja" ){
 
   <section class="content-header">
     
-    <h1>
+    <h1 style="color: blue;">
       
       Escritorio
       

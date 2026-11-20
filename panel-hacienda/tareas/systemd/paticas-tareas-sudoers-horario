@@ -6,3 +6,4 @@ www-data ALL=(root) NOPASSWD: /usr/local/sbin/paticas-tareas-ctl mensajeria_upda
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/paticas-tareas-ctl prefacturas_update schedule *
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/paticas-tareas-ctl actividades_comerciales schedule *
 www-data ALL=(root) NOPASSWD: /usr/local/sbin/paticas-tareas-ctl backup_inventario schedule *
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/paticas-tareas-ctl codigo_respaldo schedule *

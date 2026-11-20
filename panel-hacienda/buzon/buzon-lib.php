@@ -340,6 +340,20 @@ function bz_num(?string $v): ?string
     return $v === '' || !is_numeric($v) ? null : $v;
 }
 
+/** Texto del MensajeHacienda: el estado ("Aceptado"), no el detalle. Hacienda deja DetalleMensaje en "." cuando acepta. */
+function bz_mensaje_hacienda(string $estado, string $detalle, string $codigo = ''): string
+{
+    $estado = trim($estado);
+    if ($estado === '') {
+        $estado = ['1' => 'Aceptado', '2' => 'Aceptado Parcialmente', '3' => 'Rechazado'][trim($codigo)] ?? '';
+    }
+    $detalle = trim($detalle);
+    if ($detalle !== '' && !preg_match('/^[.\s…]+$/u', $detalle)) {
+        return $estado !== '' ? $estado . "\n" . $detalle : $detalle;
+    }
+    return $estado;
+}
+
 /** Interpreta un XML de Hacienda. null si no es un comprobante reconocido. */
 function bz_xml(string $xml): ?array
 {
@@ -365,7 +379,8 @@ function bz_xml(string $xml): ?array
         $r += ['nit_emisor' => $g('NumeroCedulaEmisor'), 'nombre_emisor' => $g('NombreEmisor'), 'tipo_id_emisor' => $g('TipoIdentificacionEmisor'),
             'nit_receptor' => $g('NumeroCedulaReceptor'), 'nombre_receptor' => $g('NombreReceptor'),
             'estado' => ['1' => 'aceptado', '2' => 'aceptado_parcial', '3' => 'rechazado'][$msj] ?? null,
-            'detalle' => $g('DetalleMensaje'), 'total_impuesto' => bz_num($g('MontoTotalImpuesto')), 'total_comprobante' => bz_num($g('TotalFactura'))];
+            'detalle' => bz_mensaje_hacienda($g('EstadoMensaje'), $g('DetalleMensaje'), $msj),
+            'total_impuesto' => bz_num($g('MontoTotalImpuesto')), 'total_comprobante' => bz_num($g('TotalFactura'))];
         return $r;
     }
     if ($root === 'MensajeReceptor') {

@@ -11,6 +11,7 @@ Timers systemd (OnCalendar en America/Costa_Rica). El horario vigente se guarda 
 | prefacturas_update | diaria 17:48 | paticas-prefacturas-update.timer | pat-php-app01 |
 | actividades_comerciales | cada 5 min | paticas-actividades-comerciales.timer | pat-php-app01 |
 | backup_inventario | diaria 18:00 | paticas-backup-inventario.timer | pat-sql-web01 |
+| codigo_respaldo | cada 6 horas, minuto 20 | paticas-codigo-respaldo.timer | pat-php-app01 |
 
 Control desde el panel vía `paticas-tareas-ctl` (sudoers exacto, incluida la acción `schedule <token>`).
 El respaldo se controla desde .106 con la llave `/etc/lospaticas/ssh/paticas-backup-inventario`

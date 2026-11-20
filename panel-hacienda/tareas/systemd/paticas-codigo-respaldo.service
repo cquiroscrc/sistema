@@ -1,0 +1,19 @@
+[Unit]
+Description=Los Paticas - respaldo de codigo a GitHub y MEGA si hay cambios
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=www-data
+UMask=0027
+Environment=TZ=America/Costa_Rica
+RuntimeDirectory=paticas-codigo-respaldo
+ExecStart=/usr/local/sbin/paticas-codigo-respaldo
+StandardOutput=append:/var/log/lospaticas/codigo-respaldo.log
+StandardError=append:/var/log/lospaticas/codigo-respaldo.log
+TimeoutStartSec=3h
+Nice=10
+NoNewPrivileges=yes
+PrivateTmp=yes

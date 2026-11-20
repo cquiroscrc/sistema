@@ -7,6 +7,7 @@
 #   espacio | mega-espacio                                          (uso de disco / cuota MEGA)
 #   mega-status | mega-files | mega-download <nombre> | mega-delete <nombre>  (MEGA: /Respaldos/inventario)
 #   retencion | retencion-set <local>:<mega>     (dias a mantener, enteros 1-365; aplica en la proxima corrida, no borra nada)
+#   codigo-put codigo_YYYYMMDD_HHMM.tar.gz          (MEGA: /Respaldos/codigo, archivo en codigo-inbox)
 set -euo pipefail
 SELF=/usr/local/sbin/paticas-backup-ctl
 
@@ -97,7 +98,7 @@ oncalendar_de_token() {
   if [[ "$t" =~ ^intervalo:horas:([0-9]{1,2})$ ]]; then
     local n=$((10#${BASH_REMATCH[1]}))
     [ "$n" -ge 1 ] && [ "$n" -le 23 ] || return 2
-    printf '%s\n' "*-*-* 0/${n}:00:00 America/Costa_Rica"
+    printf '%s\n' "*-*-* 0/${n}:20:00 America/Costa_Rica"
     return 0
   fi
   if [[ "$t" =~ ^semanal:(Mon|Tue|Wed|Thu|Fri|Sat|Sun):([0-9]{2}):([0-9]{2})$ ]]; then
@@ -226,6 +227,22 @@ case "$ACC" in
     chmod 644 "$TMP"; mv -f "$TMP" "$RET_CONF"
     echo "$(TZ=America/Costa_Rica date '+%Y-%m-%d %H:%M:%S') configuracion: retencion local $L dias, MEGA $M dias (panel; aplica en la proxima corrida)" >> /var/log/paticas-backup-inventario.log
     printf 'LOCAL\t%s\nMEGA\t%s\n' "$L" "$M"
+    ;;
+  codigo-put)
+    [[ "$NOMBRE" =~ ^codigo_[0-9]{8}_[0-9]{4}\.tar\.gz$ ]] || { echo "nombre no permitido" >&2; exit 2; }
+    INBOX=/home/administrator/codigo-inbox
+    F="$INBOX/$NOMBRE"
+    [ -f "$F" ] && [ ! -L "$F" ] || { echo "no existe" >&2; exit 4; }
+    case "$(readlink -f -- "$F")" in
+      "$INBOX"/*) ;;
+      *) echo "ruta no permitida" >&2; exit 2 ;;
+    esac
+    set +e
+    /usr/local/sbin/paticas-backup-codigo-mega "$F"
+    rc=$?
+    set -e
+    rm -f -- "$F"
+    exit "$rc"
     ;;
   *)
     echo "comando no permitido" >&2

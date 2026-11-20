@@ -1,0 +1,11 @@
+[Unit]
+Description=Los Paticas - respaldo de codigo cada 6 horas (Costa Rica). Solo envia si el codigo cambio.
+
+[Timer]
+OnCalendar=*-*-* 0/6:20:00 America/Costa_Rica
+Persistent=true
+AccuracySec=1min
+Unit=paticas-codigo-respaldo.service
+
+[Install]
+WantedBy=timers.target

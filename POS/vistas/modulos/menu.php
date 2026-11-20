@@ -322,12 +322,7 @@
                 //======== Menu de ventas
                 echo '<ul class="treeview-menu">';
                 //Listados
-                echo '<li>			
-						<a  href="https://app.hubspot.com/live-messages/7595750/inbox" target="_blank">
-							<img src="vistas/img/plantilla/hubspot.png" style="width:24px;height:24px;">
-							<span>Hub Spot</span>
-						</a>
-					</li>';
+                
                 echo '<li>	
 						<a  href="https://www.lospaticas.com/correo" target="_blank">
 							<img src="vistas/img/plantilla/correo.png" style="width:24px;height:24px;">
@@ -399,24 +394,14 @@
 							<span>Aceites</span>
 						</a>
 						<ul>
-						    <li>		
-								<a  href="catalogow"  target="_blank">	
-									<img src="vistas/img/plantilla/item.png" style="width:24px;height:24px;">
-									<span>Wolf</span>
-								</a>
-							</li>
+						    
 							<li>		
 								<a  href="catalogolqm"  target="_blank">	
 									<img src="vistas/img/plantilla/item.png" style="width:24px;height:24px;">
 									<span>Liqui Moly</span>
 								</a>
 							</li>
-							<li>
-								<a  href="catalogocastrol"  target="_blank">	
-									<img src="vistas/img/plantilla/item.png" style="width:24px;height:24px;">
-									<span>Castrol</span>
-								</a>
-							</li>
+							
 						</ul>
 					</li>';
                 // Bujias
@@ -427,17 +412,12 @@
 						</a>
 						<ul>
 							<li>
-								<a  href="https://www.partcat.com/ngk" target="_blank">
+								<a  href="https://ngksparkplugs.com/en/part-finder" target="_blank">
 									<img src="vistas/img/plantilla/item.png" style="width:24px;height:24px;">
 									<span>NGK</span>
 								</a>
 							</li>
-							<li>
-								<a  href="catalogoauto">	
-									<img src="vistas/img/plantilla/item.png" style="width:24px;height:24px;">
-									<span>AutoLite</span>
-								</a>
-							</li>
+							
 						</ul>
 					</li>';
                 //cr-415769 / admin / paticas2020cat* / pedidos /pEdidos* / ventas / ventas_paticas
@@ -447,12 +427,7 @@
 							<span>App</span>
 						</a>
 					</li>';
-                echo '<li>	 
-						<a href="catalogodaihatsu" target="_blank" >	 
-							<img src="vistas/img/plantilla/daihatsu.png" style="width:24px;height:24px;">
-							<span>Daihatsu</span>
-						</a>
-					</li>';
+                
                 echo '<li> 
 						<a href="catalogopl24" target="_blank" >	 
 							<img src="vistas/img/plantilla/vw.png" style="width:24px;height:24px;">

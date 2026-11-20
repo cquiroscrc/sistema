@@ -70,7 +70,7 @@ if($_SESSION["perfil"] == "ventas" || $_SESSION["perfil"] == "bodega" || $_SESSI
 
   <section class="content-header">
     
-    <h1 style="display:inline;">
+    <h1 style="display:inline;color: blue;">
       Cierre de Caja
     </h1> 
     <h1 style="display:inline;color:maroon" id="FechaCierre"></h1>

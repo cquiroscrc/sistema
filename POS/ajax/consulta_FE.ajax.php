@@ -87,7 +87,7 @@ if ($fechaActual != ""){
         //ingresa datos en cuadro
         echo "<td>".$id_f."</td> ";
         echo "<td>".$arr["FECHA_HORA"]."</td> ";
-
+        
         echo "<td><a href='../POS/vistas/modulos/pdf.php?factura=".$arr["NUMERO_DOC"]."' target = '_blank'>".$arr["NUMERO_DOC"]."</a></td>";
         echo "<td>".$arr["Nombre"]."</td>";
         echo "<td>".$arr["vendedor"]."</td>";

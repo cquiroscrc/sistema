@@ -95,7 +95,7 @@ class ModeloProductos{
 	=============================================*/
 	static public function mdlEditarProducto($tabla, $datos){
 
-		$stmt = Conexion::conectar()->prepare("UPDATE $tabla SET DESCRIPCION = :descripcion, DESC_ALT = :tecnica, EXISTENCIA = :stock, COSTO = :precio_compra, VENTA = :precio_venta, MARCA = :marca, proveedor = :proveedor, ubicacion = :ubicacion, potencia = :potencia, Carro= :Carro WHERE CODIGO = :codigo");
+		$stmt = Conexion::conectar()->prepare("UPDATE $tabla SET DESCRIPCION = :descripcion, DESC_ALT = :tecnica, EXISTENCIA = :stock, COSTO = :precio_compra, VENTA = :precio_venta, MARCA = :marca, proveedor = :proveedor, ubicacion = :ubicacion, potencia = :potencia, Carro= :Carro ,  CODIGO_CABYS= :cabys WHERE CODIGO = :codigo");
 
 		$stmt->bindParam(":codigo", $datos["codigo"], PDO::PARAM_STR);
 		$stmt->bindParam(":descripcion", $datos["descripcion"], PDO::PARAM_STR);
@@ -108,6 +108,7 @@ class ModeloProductos{
 		$stmt->bindParam(":proveedor", $datos["proveedor"], PDO::PARAM_STR);
 		$stmt->bindParam(":ubicacion", $datos["ubicacion"], PDO::PARAM_STR);
 		$stmt->bindParam(":potencia", $datos["potencia"], PDO::PARAM_INT);
+		$stmt->bindParam(":cabys", $datos["cabys"], PDO::PARAM_INT);
 		$stmt->bindParam(":Carro", $datos["Carro"], PDO::PARAM_INT);
 
 		if($stmt->execute()){

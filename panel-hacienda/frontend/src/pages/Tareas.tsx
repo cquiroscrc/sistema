@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import { CalendarClock, Play, Square, Zap, AlertTriangle, HardDrive, Settings, Send, Info, Receipt, MessageSquare, Eraser, Briefcase, Database, type LucideIcon } from 'lucide-react';
+import { CalendarClock, Play, Square, Zap, AlertTriangle, HardDrive, Settings, Send, Info, Receipt, MessageSquare, Eraser, Briefcase, Database, FolderGit2, type LucideIcon } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import { Button, Card, CardBody, Input, Modal, Select, useToast } from '../components/ui';
@@ -26,7 +26,7 @@ export type Tarea = {
 
 const PALABRA: Record<Accion, string> = { enable: 'ACTIVAR', disable: 'DESACTIVAR', start: 'EJECUTAR' };
 export const CLAVE_TAB = 'panel.tareas.tab';
-const ICONO: Record<string, LucideIcon> = { caja_correo: Receipt, mensajeria_update: MessageSquare, prefacturas_update: Eraser, actividades_comerciales: Briefcase, backup_inventario: Database };
+const ICONO: Record<string, LucideIcon> = { caja_correo: Receipt, mensajeria_update: MessageSquare, prefacturas_update: Eraser, actividades_comerciales: Briefcase, backup_inventario: Database, codigo_respaldo: FolderGit2 };
 const iconoDe = (id: string): LucideIcon => ICONO[id] ?? CalendarClock;
 const DIAS: { id: string; label: string }[] = [
   { id: 'Mon', label: 'lunes' }, { id: 'Tue', label: 'martes' }, { id: 'Wed', label: 'miércoles' },
@@ -125,6 +125,8 @@ function avisoCorrida(t: Tarea): string {
       return `Se ejecuta ahora una corrida del actualizador de actividades comerciales. Si ya hay una en curso se omite. El horario (${hora}) no cambia.`;
     case 'backup_inventario':
       return `Se inicia ahora el respaldo de la base inventario en pat-sql-web01. Puede tardar y, al terminar, sube el archivo a MEGA. El horario (${hora}) no cambia.`;
+    case 'codigo_respaldo':
+      return `Se revisa ahora el código del sistema. Si cambió desde el último envío, se publica en GitHub y se sube un paquete a MEGA. Si no cambió, no se envía nada. El horario (${hora}) no cambia.`;
     default:
       return `Se ejecuta ahora. El horario programado (${hora}) no cambia.`;
   }
@@ -210,9 +212,8 @@ function HorarioEditor({ tarea, onGuardado }: { tarea: Tarea; onGuardado: () => 
     } finally { setCargando(false); }
   };
 
-  return <>
-    <div className="rounded-lg border p-3">
-      <div className="flex flex-nowrap items-end gap-2 overflow-x-auto">
+  return <div className="rounded-lg border p-3">
+    <div className="flex flex-nowrap items-end gap-2 overflow-x-auto">
         <label className="shrink-0 text-xs font-medium text-muted-foreground">Periodicidad
           <Select className={cn('mt-1', sel)} value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value as FormHorario['tipo'] }))}>
             <option value="diaria">Diaria</option>
@@ -241,10 +242,9 @@ function HorarioEditor({ tarea, onGuardado }: { tarea: Tarea; onGuardado: () => 
         <Button className="shrink-0" disabled={!sucio || !!error || cargando} onClick={() => setConfirmar(true)}>Guardar horario</Button>
         {sucio && <Button variant="ghost" className="shrink-0" onClick={() => setForm(original)}>Deshacer</Button>}
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">
-        {error ? <span className="text-danger">{error}</span> : <>{texto || '—'}{proxima ? ` · próxima ejecución: ${proxima}` : ''}{!tarea.enabled ? ' · el timer está deshabilitado; el cambio queda guardado y no lo activa' : ''}</>}
-      </p>
-    </div>
+    <p className="mt-2 text-xs text-muted-foreground">
+      {error ? <span className="text-danger">{error}</span> : <>{texto || '—'}{proxima ? ` · próxima ejecución: ${proxima}` : ''}{!tarea.enabled ? ' · el timer está deshabilitado; el cambio queda guardado y no lo activa' : ''}</>}
+    </p>
     <Modal open={confirmar} onClose={() => setConfirmar(false)} title={`Cambiar horario de ${tarea.nombre}`}
       footer={<><Button variant="outline" onClick={() => setConfirmar(false)}>Cancelar</Button>
         <Button loading={cargando} disabled={!!error} onClick={guardar}>Guardar</Button></>}>
@@ -253,7 +253,7 @@ function HorarioEditor({ tarea, onGuardado }: { tarea: Tarea; onGuardado: () => 
         <p className="text-muted-foreground">No se ejecuta la tarea ahora. El timer sigue {tarea.enabled ? 'habilitado' : 'deshabilitado'}.</p>
       </div>
     </Modal>
-  </>;
+  </div>;
 }
 
 export default function Tareas({ onCambio }: { onCambio?: () => void }) {
@@ -294,7 +294,7 @@ export default function Tareas({ onCambio }: { onCambio?: () => void }) {
         {(() => { const I = iconoDe(x.id); return <I className="h-4 w-4 shrink-0" aria-hidden="true" />; })()}{x.nombre}</button>)}
       {!items && <span className="px-3 py-2 text-sm text-muted-foreground">Cargando tareas…</span>}
     </div>
-    {t && <Card className="flex min-h-0 flex-1 flex-col">
+    {t && <Card key={t.id} className="flex min-h-0 flex-1 flex-col">
       <CardBody className="flex min-h-0 flex-1 flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="flex items-center gap-2 text-base font-semibold">{(() => { const I = iconoDe(t.id); return <I className="h-4 w-4 text-primary" aria-hidden="true" />; })()}{t.nombre}
@@ -309,7 +309,7 @@ export default function Tareas({ onCambio }: { onCambio?: () => void }) {
           {dato('Resultado', `${t.servicio.Result || '—'} (código ${t.servicio.ExecMainStatus ?? '—'})`)}
           {dato('Inicio / fin', <>{t.servicio.ExecMainStartTimestamp || '—'}{t.servicio.ExecMainExitTimestamp ? <><br />{t.servicio.ExecMainExitTimestamp}</> : null}</>)}
         </div>
-        <HorarioEditor key={t.id} tarea={t} onGuardado={() => { cargar(); onCambio?.(); }} />
+        <HorarioEditor tarea={t} onGuardado={() => { cargar(); onCambio?.(); }} />
         <div className="flex flex-wrap gap-3">
           <Button variant="outline" disabled={t.corriendo} onClick={() => { setPalabra(''); setModal({ id: t.id, acc: 'start', nombre: t.nombre }); }}><Zap className="h-4 w-4" />{t.corriendo ? 'En curso' : 'Ejecutar ahora'}</Button>
           <Button variant="success" disabled={t.enabled} onClick={() => { setPalabra(''); setModal({ id: t.id, acc: 'enable', nombre: t.nombre }); }}><Play className="h-4 w-4" />Activar</Button>
@@ -318,7 +318,7 @@ export default function Tareas({ onCambio }: { onCambio?: () => void }) {
           {t.id === 'caja_correo' && <Button variant="outline" onClick={() => setConfigCaja(true)}><Settings className="h-4 w-4" />Configuración</Button>}
           {t.id === 'caja_correo' && <Button variant="outline" onClick={() => setTestCaja(true)}><Send className="h-4 w-4" />Test</Button>}
         </div>
-        <Registro key={t.id} tarea={t} />
+        <Registro tarea={t} />
       </CardBody>
     </Card>}
     <Modal open={!!modal} onClose={() => setModal(null)} tone={modal?.acc === 'enable' ? 'danger' : undefined}

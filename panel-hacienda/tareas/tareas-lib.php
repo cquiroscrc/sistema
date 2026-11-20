@@ -10,6 +10,7 @@ function ph_tareas_defs(): array
         ['id' => 'prefacturas_update', 'nombre' => 'Limpiar prefacturas', 'descripcion' => 'utilitarios/prefacturas_update.php · DELETE de hprefacturas, hpregeneral y tmp_devol', 'hora' => '17:48', 'servidor' => 'pat-php-app01 (.106)'],
         ['id' => 'actividades_comerciales', 'nombre' => 'Actividades comerciales', 'descripcion' => 'web_paticas_v2/FacturaElectronica/Utils/ActualizadorActividadComercial.php · actualiza las actividades comerciales desde Hacienda (flock: si la corrida anterior sigue, se omite; tope 4 min)', 'hora' => 'cada 5 min', 'servidor' => 'pat-php-app01 (.106)'],
         ['id' => 'backup_inventario', 'nombre' => 'Respaldo BD inventario', 'descripcion' => 'BACKUP DATABASE inventario WITH COMPRESSION, CHECKSUM + RESTORE VERIFYONLY (retención 14 días)', 'hora' => '18:00', 'servidor' => 'pat-sql-web01 (.100)'],
+        ['id' => 'codigo_respaldo', 'nombre' => 'Respaldo de código', 'descripcion' => 'Cada 6 horas revisa /var/www/lospaticas/sistema. Si hay cambios, hace push a github.com/cquiroscrc/sistema y sube un tar.gz a MEGA /Respaldos/codigo (conserva los 14 más recientes). Si no hay cambios, no envía nada. No toca el repositorio de producción.', 'hora' => 'cada 6 horas', 'servidor' => 'pat-php-app01 (.106)'],
     ];
 }
 
@@ -84,7 +85,7 @@ function ph_horario_oncalendar(string $token): ?string
     if (preg_match('/^intervalo:horas:([0-9]{1,2})$/', $token, $m)) {
         $n = (int)$m[1];
         if ($n < 1 || $n > 23) return null;
-        return "*-*-* 0/{$n}:00:00 America/Costa_Rica";
+        return "*-*-* 0/{$n}:20:00 America/Costa_Rica";
     }
     if (preg_match('/^semanal:(Mon|Tue|Wed|Thu|Fri|Sat|Sun):([0-9]{2}):([0-9]{2})$/', $token, $m)) {
         if ((int)$m[2] > 23) return null;
@@ -128,7 +129,8 @@ function ph_horario_parse(?string $cal): array
         $h['texto'] = ph_horario_texto($h);
         return $h;
     }
-    if (preg_match('/^(?:\*-\*-\* )?0\/([0-9]{1,2}):00:00$/', $expr, $m)) {
+    if (preg_match('/^(?:\*-\*-\* )?0+\/([0-9]{1,2}):([0-9]{2}):00$/', $expr, $m)) {
+        if ((int)$m[2] > 59) return ['tipo' => 'otro', 'oncalendar' => $oncal, 'texto' => $oncal !== '' ? $oncal : '—'];
         $h = ['tipo' => 'intervalo', 'cada' => (int)$m[1], 'unidad' => 'horas'] + $base;
         $h['texto'] = ph_horario_texto($h);
         return $h;
@@ -401,6 +403,7 @@ function api_tarea_log(): array
         'mensajeria_update' => '/var/log/lospaticas/mensajeria-update.log',
         'prefacturas_update' => '/var/log/lospaticas/prefacturas-update.log',
         'actividades_comerciales' => '/var/log/lospaticas/actividades-comerciales.log',
+        'codigo_respaldo' => '/var/log/lospaticas/codigo-respaldo.log',
     ];
     if (isset($locales[$id])) {
         [$lineas, $truncado] = ph_log_archivo($locales[$id]);

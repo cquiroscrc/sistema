@@ -192,7 +192,8 @@ session_start();
 
             //Pedidos por separado *****
           echo '<td><a name="'.$codigos.'" id="a"></a><a style="color:black" data-toggle="tooltip" title="'.$ped_totales.'">'.number_format($pedidos,2).'</a></td>';
-          echo '<td>'.$ubicacion.'</td>';
+          echo '<td><button class="btn btn-success" id="add_codigo" onclick="myNombre('."'".$codigos."'".')">'.$ubicacion.'</button></td>';
+          //echo '<td>'.$ubicacion.'</td>';
           // meter sucursal
           $sqlsuc= "SELECT * FROM tbl_exi_suc WHERE codigo = '$codigos'";
             $sucursal=0;

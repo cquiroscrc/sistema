@@ -118,6 +118,8 @@ $("#resultado_codigo").on("click", "button.btnEditarProducto", function(){
 
            $("#editarPotencia").val(respuesta["potencia"]);
 
+           $("#editarCabys").val(respuesta["CODIGO_CABYS"]);
+
            $("#id_tecnicas").text(respuesta["Carro"]);
 
       }

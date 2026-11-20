@@ -34,7 +34,7 @@ include "modelos/procesos_factura.php"
 </style>
 <div class="content-wrapper">
     <section class="content-header">
-        <h1 style="display:inline;">
+        <h1 style="display:inline;color: blue;">
             Facturación **//**
         </h1>
         <?php

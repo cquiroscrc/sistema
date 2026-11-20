@@ -22,11 +22,15 @@ use Spatie\ArrayToXml\ArrayToXml;
 
 function genXML()
 {
-   $detalle                = json_decode(params_get("detalle"),true);
+   $detalle= json_decode(params_get("detalle"),true);
+
    $tipo_doc=params_get("tipoDocumento");
+
    $tipo_doc_referencia=params_get("tipo_doc_referencia");
    $fecha_emision_ir=params_get("fecha_emision_ir");
-   $fecha_emision_ir_formateada = date("Y-m-d\TH:i:sP",strtotime($fecha_emision_ir));
+   $tsIr = (!empty($fecha_emision_ir) && $fecha_emision_ir !== '0') ? strtotime($fecha_emision_ir) : false;
+
+   $fecha_emision_ir_formateada = ($tsIr !== false) ? date("Y-m-d\TH:i:sP", $tsIr) : '';
    $sello_sat_50 = params_get("sello_sat_50");
 
    //$DetalleServicio        = json_decode(params_get("detalles"));

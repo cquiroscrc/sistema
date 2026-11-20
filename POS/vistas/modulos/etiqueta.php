@@ -211,8 +211,10 @@ window.onload = setup;
                    <div class="input-group mb-3">
                                 <input type="text" id="ID_Nombre" class="form-control" placeholder="Nombre" aria-label="Nombre" autocomplete="off" style="text-transform: uppercase;">
                                 <hr>
-                                <button onclick="myNombre()" class="btn btn-primary"><i class="fa fa-search-plus"></i>Imprimir
+                                
+                                <button onclick="myNombre()" class="btn btn-primary"><i class="fa fa-search-plus"></i>Imprimir Nombre
                                     </button>
+                               
                                     
                            </div>
               </div>
@@ -220,6 +222,7 @@ window.onload = setup;
         </div>
         <button class="btn btn-warning" onclick="RecorrerTabla()">Actualizar</button>
         <button class="btn btn-success" onclick="ArmarEtiquetas()">Imprimir</button>
+        
           </div>
          
     </div>
@@ -322,6 +325,7 @@ document.getElementById('selector').addEventListener('keydown',
       
     }); 
 
+
 /*=============================================
   MY FUNCTION CODIGO
   =============================================*/
@@ -336,27 +340,36 @@ function myFunctionCodigo() {
   });
 }
 
+
+
+
 /*=============================================
-  MY Nombre (Pregunta cantidad)
+  MY Nombre (Pregunta cantidad) Version libre
   =============================================*/
-function myNombre(){
+function myNombre(codigo){
               
-                  var encabezado='^XA^CF0,36^FO120,50^FDREPUESTOS LOS PATICAS^FS';
+                  //var encabezado='^XA^CF0,60^FO120,50^FDREPUESTOS LOS PATICAS^FS';
                  //var encabezado='^XA^CF0,36^FO120,50^FDGEL ANTIBACTERIAL^FS';
-                  
+
+                  var encabezado='^XA^CF0,55^';
                   /*var codigop='^FO'+pos+',90^FD'+Nombre.value+'^FS';
                   var codigop = '^FO40FD'+ valorDelLabel  +'^FS' ;
                     +'^FS^XZ'
                   */
                   //var codigo ='GENERACION 75 - 2026';
-                  var codigo =$('#ID_Nombre').val();
-                  var pos = 55;
-                  var codigop='^FO'+pos+',90^FD'+codigo+'^FS';
+                  if (codigo == null){
+                    var codigo =$('#ID_Nombre').val();
+                  }
                   
+                  var pos = 45;
+                  var codigop='^FO'+pos+',90^FD'+codigo+'^FS';
+                  //var codigop='^XAFO'+pos+',90^FD'+codigo+'^FS';
+                 
                   colilla=encabezado+codigop +'^XZ';
                   console.log(colilla);
                   /// Habilitar esto para que imprima ****
                   setTimeout(() => { writeToSelectedPrinter(colilla); }, 1000); 
+                  $('#modalBuscarCodigo').modal('hide');
                
 }
 
@@ -646,6 +659,10 @@ function ArmarEtiquetas(){
     }
 }
 
+/*=============================================
+  IMPRIME Colilla
+  =============================================*/
+
 function ImprimeColilla(recibido){
   console.log("recibido:"+recibido)
   while (recibido.indexOf("^XZ") != -1) {
@@ -664,6 +681,10 @@ function ImprimeColilla(recibido){
   }
 
 }
+
+/*=============================================
+  Tiempo
+  =============================================*/
 
 function sleep(milliseconds) {
   const date = Date.now();

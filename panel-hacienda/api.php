@@ -336,8 +336,9 @@ function docs_where(array &$p): string
         case 'pendiente': $w[] = "(d.XML_RESPUESTA IS NULL OR d.XML_RESPUESTA = '') AND d.ENVIADO = 'S'"; break;
     }
     if (in_array($_GET['tipo'] ?? '', ['FE', 'NC', 'ND', 'TE', 'FEC', 'FEE'], true)) { $w[] = 'd.TIPO_DOC = ?'; $p[] = $_GET['tipo']; }
-    if ($d = ph_date($_GET['desde'] ?? null)) { $w[] = 'd.FECHA_HORA >= CONVERT(datetime, ?, 121)'; $p[] = $d; }
-    if ($h = ph_date($_GET['hasta'] ?? null)) { $w[] = 'd.FECHA_HORA <= CONVERT(datetime, ?, 121)'; $p[] = strlen($h) === 10 ? "$h 23:59:59" : $h; }
+    // Misma fecha que la columna: fecha_documento del POS, o FECHA_HORA si el documento es anterior a esa columna.
+    if ($d = ph_date($_GET['desde'] ?? null)) { $w[] = 'COALESCE(h.fecha_documento, d.FECHA_HORA) >= CONVERT(datetime, ?, 121)'; $p[] = $d; }
+    if ($h = ph_date($_GET['hasta'] ?? null)) { $w[] = 'COALESCE(h.fecha_documento, d.FECHA_HORA) <= CONVERT(datetime, ?, 121)'; $p[] = strlen($h) === 10 ? "$h 23:59:59" : $h; }
     $q = trim((string)($_GET['q'] ?? ''));
     if ($q !== '') {
         $w[] = '(d.NUMERO_DOC LIKE ? OR d.SELLO_SAT LIKE ? OR d.NIT_RECEPTOR LIKE ? OR d.EMAIL_RECEPTOR LIKE ?)';
@@ -367,22 +368,39 @@ function ph_orden(array $mapa, string $def, string $defDir, array $desempate): a
     return [implode(', ', $partes), $o, $d];
 }
 
+/** FROM de comprobantes con la fecha real del documento (HFACTURAS.fecha_documento), no fechafact. */
+function docs_from(): string
+{
+    return "FROM dbo.DOC_ELECTRONICO_PROCESADO d
+        LEFT JOIN (
+            SELECT nfac, MAX(fecha_documento) fecha_documento
+            FROM dbo.HFACTURAS
+            WHERE fecha_documento IS NOT NULL
+            GROUP BY nfac
+        ) h ON h.nfac = d.NUMERO_DOC";
+}
+
 function api_docs(): array
 {
     $p = [];
     $where = docs_where($p);
     $page = max(1, (int)($_GET['page'] ?? 1)); $size = max(10, min(200, (int)($_GET['size'] ?? 50)));
     $off = ($page - 1) * $size;
-    [$ord, $oCol, $oDir] = ph_orden(['fecha' => ['d.FECHA_HORA'], 'documento' => ['d.TIPO_DOC', 'd.NUMERO_DOC'], 'consecutivo' => ['SUBSTRING(d.SELLO_SAT, 22, 20)'],
+    // fechafact (y la FECHA_HORA copiada de ella) puede ser un cierre contable que todavía no ocurre.
+    // Con fecha_documento se ordena por esa hora. Sin ella, una FECHA_HORA futura queda al final.
+    $fechaOrden = "CASE WHEN h.fecha_documento IS NOT NULL THEN h.fecha_documento WHEN d.FECHA_HORA > GETDATE() THEN CONVERT(datetime, '19000101', 112) ELSE d.FECHA_HORA END";
+    [$ord, $oCol, $oDir] = ph_orden(['fecha' => [$fechaOrden], 'documento' => ['d.TIPO_DOC', 'd.NUMERO_DOC'], 'consecutivo' => ['SUBSTRING(d.SELLO_SAT, 22, 20)'],
         'receptor' => ['d.NIT_RECEPTOR'], 'total' => ['d.TOTALCOMPROBANTE'], 'estado' => ['d.ESTADO']], 'fecha', 'desc', ['d.FECHA_HORA' => 'DESC', 'd.NUMERO_DOC' => 'ASC']);
+    $from = docs_from();
     $db = ph_db();
-    $st = $db->prepare("SELECT COUNT(*) FROM dbo.DOC_ELECTRONICO_PROCESADO d $where"); $st->execute($p); $total = (int)$st->fetchColumn();
-    $st = $db->prepare("SELECT RTRIM(d.TIPO_DOC) TIPO_DOC, RTRIM(d.NUMERO_DOC) NUMERO_DOC, RTRIM(d.SELLO_SAT) SELLO_SAT, CONVERT(varchar(19), d.FECHA_HORA, 120) FECHA_HORA,
+    $st = $db->prepare("SELECT COUNT(*) $from $where"); $st->execute($p); $total = (int)$st->fetchColumn();
+    $st = $db->prepare("SELECT RTRIM(d.TIPO_DOC) TIPO_DOC, RTRIM(d.NUMERO_DOC) NUMERO_DOC, RTRIM(d.SELLO_SAT) SELLO_SAT,
+        CONVERT(varchar(19), COALESCE(h.fecha_documento, d.FECHA_HORA), 120) FECHA_HORA,
         RTRIM(d.FECHATIMBRADO) FECHATIMBRADO, RTRIM(d.NIT_RECEPTOR) NIT_RECEPTOR, RTRIM(d.EMAIL_RECEPTOR) EMAIL_RECEPTOR, d.TOTALCOMPROBANTE, RTRIM(d.ESTADO) ESTADO,
         d.ENVIADO, d.ACEPTADO, RTRIM(d.EMAIL_ENVIADO) EMAIL_ENVIADO, LEFT(d.ULTIMO_ERROR, 300) ULTIMO_ERROR,
         CASE WHEN d.XML_RESPUESTA IS NULL OR d.XML_RESPUESTA = '' THEN 0 ELSE 1 END TIENE_RESP,
         CASE WHEN DATALENGTH(d.PDF) > 0 THEN 1 ELSE 0 END TIENE_PDF, d.PDF_PATH
-        FROM dbo.DOC_ELECTRONICO_PROCESADO d $where ORDER BY $ord OFFSET $off ROWS FETCH NEXT $size ROWS ONLY");
+        $from $where ORDER BY $ord OFFSET $off ROWS FETCH NEXT $size ROWS ONLY");
     $st->execute($p);
     $rows = [];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -444,7 +462,10 @@ function api_doc(): array
     return ['ok' => true, 'doc' => $r,
         'receptor_nombre' => xml_val($xml, "//*[local-name()='Receptor']/*[local-name()='Nombre']"),
         'consecutivo' => xml_val($xml, "//*[local-name()='NumeroConsecutivo']"),
-        'mensaje_hacienda' => xml_val($resp, "//*[local-name()='DetalleMensaje']"),
+        'mensaje_hacienda' => bz_mensaje_hacienda(
+            xml_val($resp, "//*[local-name()='EstadoMensaje']"),
+            xml_val($resp, "//*[local-name()='DetalleMensaje']"),
+            xml_val($resp, "//*[local-name()='Mensaje']")),
         'xml' => $xml, 'xml_respuesta' => $resp, 'bitacora' => $bit,
         'puede_reintentar' => ($ri = ph_reintento($r + ['TIENE_RESP' => trim((string)$r['XML_RESPUESTA']) !== ''], $num))[0], 'reintento_motivo' => $ri[1],
         'pdf' => doc_pdf($tipo, $num, true) !== null,
@@ -896,7 +917,14 @@ function api_buzon_doc(): array
         if ($abs && $r['CLASE'] === 'respuesta' && $resp === null) $resp = xml_pretty((string)file_get_contents($abs, false, null, 0, 2 * 1048576));
         if ($abs && $r['CLASE'] === 'pdf' && $pdf === null) $pdf = (int)$r['ID'];
     }
-        $pc = ph_db()->prepare('SELECT CUENTA FROM dbo.FE_BUZON_DOC_CUENTAS WHERE CLAVE = ? ORDER BY CUENTA'); $pc->execute([$d['CLAVE']]);
+    if ($resp) {
+        $mh = bz_mensaje_hacienda(
+            xml_val($resp, "//*[local-name()='EstadoMensaje']"),
+            xml_val($resp, "//*[local-name()='DetalleMensaje']"),
+            xml_val($resp, "//*[local-name()='Mensaje']"));
+        if ($mh !== '') $d['MENSAJE_HACIENDA'] = $mh;
+    }
+    $pc = ph_db()->prepare('SELECT CUENTA FROM dbo.FE_BUZON_DOC_CUENTAS WHERE CLAVE = ? ORDER BY CUENTA'); $pc->execute([$d['CLAVE']]);
     $d['BUZONES'] = $pc->fetchAll(PDO::FETCH_COLUMN);
     return ['ok' => true, 'doc' => $d, 'archivos' => $arch, 'correos' => array_values($correos), 'xml' => $xml, 'xml_respuesta' => $resp, 'pdf_id' => $pdf];
 }

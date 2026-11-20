@@ -24,13 +24,16 @@
         $nit='3101090358';  
         $facturafinal=$casa_sucursal.$terminal.$cod_tipo.str_pad($consecutivo_fac, 10, "0", STR_PAD_LEFT) ; 
         
-        //$fechasat= date('d-m-y');
-        $fechasat = time(); // La idea es mandarle ua strftime un valor de fecha completo, no una fecha en formato ya convertido como 311269
-        $codigo_sat=  $pais.strftime( "%d%m%y", $fechasat ).str_pad($nit, 12, "0", STR_PAD_LEFT).$facturafinal.'199999999';
-       
+        // fecha/hora reales para Hacienda (clave + fecha_documento)
+        $ahora = time();
+        $codigo_sat=  $pais.strftime( "%d%m%y", $ahora ).str_pad($nit, 12, "0", STR_PAD_LEFT).$facturafinal.'199999999';
+        $fecha_documento=strftime( "%Y-%m-%d", $ahora ) ." ". date("H:i:s", $ahora).".000";
+
+
+        // fechafact: fecha de cierre contable (puede ser el día siguiente)
         $fecha_hg=strftime( "%Y-%m-%d", $fecha ) ." ". date("H:i:s", $time).".000";       
-        $sql_Insert="INSERT INTO HFacturas(nfac,Nombre,Adicional,fechafact,SubTotal,impuesto,descuento,Total,Tipo,proveedor,vendedor,estado,sat,consecutivo,referencia,motivo,medio_pago)
-          values ('".$factura."','".$nombre."','".$adicional."','".$fecha_hg."','".$csubtotal."','".$cimpuesto."','".$cdescuento."','".$ctotal."','".$tiponomx."','".$cliente."','".$vendedor."','APLICADA','".$codigo_sat."','".$facturafinal."','','','".$medio_pago."')"; 
+        $sql_Insert="INSERT INTO HFacturas(nfac,Nombre,Adicional,fechafact,fecha_documento,SubTotal,impuesto,descuento,Total,Tipo,proveedor,vendedor,estado,sat,consecutivo,referencia,motivo,medio_pago)
+        values ('".$factura."','".$nombre."','".$adicional."','".$fecha_hg."','".$fecha_documento."','".$csubtotal."','".$cimpuesto."','".$cdescuento."','".$ctotal."','".$tiponomx."','".$cliente."','".$vendedor."','APLICADA','".$codigo_sat."','".$facturafinal."','','','".$medio_pago."')"; 
         
         
         $respuesta = ControladorUtilitaria::ctrMostrarUtilitariaVar($sql_Insert);

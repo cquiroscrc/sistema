@@ -1,6 +1,6 @@
 #!/bin/bash
-# Control estrecho de tareas (4 locales en .106 + respaldo en .100).
-# Uso: paticas-tareas-ctl <caja_correo|mensajeria_update|prefacturas_update|actividades_comerciales|backup_inventario> <enable|disable|start|status|log>
+# Control estrecho de tareas (5 locales en .106 + respaldo en .100).
+# Uso: paticas-tareas-ctl <caja_correo|mensajeria_update|prefacturas_update|actividades_comerciales|codigo_respaldo|backup_inventario> <enable|disable|start|status|log>
 #      paticas-tareas-ctl <id> schedule <token>
 #        token: diaria:HH:MM | intervalo:minutos:N | intervalo:horas:N | semanal:(Mon|Tue|Wed|Thu|Fri|Sat|Sun):HH:MM
 #      paticas-tareas-ctl backup_inventario <files|mega-status|mega-files|espacio|mega-espacio|retencion>
@@ -42,7 +42,7 @@ ACC="${2:-}"
 NOMBRE="${3:-}"
 [ $# -le 3 ] || { echo "demasiados argumentos" >&2; exit 2; }
 case "$ID" in
-  caja_correo|mensajeria_update|prefacturas_update|actividades_comerciales|backup_inventario) ;;
+  caja_correo|mensajeria_update|prefacturas_update|actividades_comerciales|codigo_respaldo|backup_inventario) ;;
   *) echo "unidad invalida" >&2; exit 2 ;;
 esac
 case "$ACC" in
@@ -78,7 +78,7 @@ oncalendar_de_token() {
   if [[ "$t" =~ ^intervalo:horas:([0-9]{1,2})$ ]]; then
     local n=$((10#${BASH_REMATCH[1]}))
     [ "$n" -ge 1 ] && [ "$n" -le 23 ] || return 2
-    printf '%s\n' "*-*-* 0/${n}:00:00 America/Costa_Rica"
+    printf '%s\n' "*-*-* 0/${n}:20:00 America/Costa_Rica"
     return 0
   fi
   if [[ "$t" =~ ^semanal:(Mon|Tue|Wed|Thu|Fri|Sat|Sun):([0-9]{2}):([0-9]{2})$ ]]; then
@@ -124,6 +124,7 @@ declare -A UNIT=(
   [mensajeria_update]=paticas-mensajeria-update
   [prefacturas_update]=paticas-prefacturas-update
   [actividades_comerciales]=paticas-actividades-comerciales
+  [codigo_respaldo]=paticas-codigo-respaldo
 )
 U="${UNIT[$ID]}"
 case "$ACC" in

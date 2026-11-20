@@ -638,9 +638,11 @@
               myAjaxHH(url,data)
               .done( function(data) {
                 console.log('Insertar ='+data);
-
+              
                 window.open("vistas/modulos/factura_aplicar.php?codigo="+nfac, "_blank");
+                
                 window.location.replace('factura');
+                sleep(2);
               });
 
              $('#modalFacturar').modal('hide');   

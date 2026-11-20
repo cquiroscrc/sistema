@@ -126,6 +126,14 @@ function Campo({ k, v, mono }: { k: string; v: React.ReactNode; mono?: boolean }
   return <div><div className="text-xs text-muted-foreground">{k}</div><div className={cn('mt-0.5 break-words text-sm', mono && 'font-mono text-xs')}>{v || '—'}</div></div>;
 }
 
+function claseMensajeHacienda(m: string): string {
+  const e = m.split('\n', 1)[0].trim().toLocaleLowerCase('es');
+  if (e.startsWith('rechaz')) return 'border-danger/40 bg-danger/10';
+  if (e.includes('parcial')) return 'border-warning/40 bg-warning/10';
+  if (e.startsWith('aceptado')) return 'border-success/30 bg-success/5';
+  return 'border-warning/40 bg-warning/10';
+}
+
 function DocDrawer({ sel, onClose, status, onCambio }: { sel: { tipo: string; numero: string } | null; onClose: () => void; status: Status | null; onCambio: () => void }) {
   const toast = useToast();
   const [d, setD] = useState<any>(null);
@@ -172,7 +180,7 @@ function DocDrawer({ sel, onClose, status, onCambio }: { sel: { tipo: string; nu
           <Campo k="Receptor" v={`${d.receptor_nombre || ''} (${doc.NIT_RECEPTOR || '—'})`} />
           <Campo k="Correo receptor" v={doc.EMAIL_RECEPTOR} />
         </div>
-        {d.mensaje_hacienda && <div className="rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm"><div className="mb-1 font-medium">Mensaje de Hacienda</div><div className="whitespace-pre-wrap">{d.mensaje_hacienda}</div></div>}
+        {d.mensaje_hacienda && <div className={cn('rounded-lg border p-4 text-sm', claseMensajeHacienda(d.mensaje_hacienda))}><div className="mb-1 font-medium">Mensaje de Hacienda</div><div className="whitespace-pre-wrap">{d.mensaje_hacienda}</div></div>}
         <Campo k="Último mensaje del sistema" v={doc.ULTIMO_ERROR} />
       </div>}
       {tab === 'pdf' && (d.pdf ? <iframe title="PDF" src={apiUrl('pdf', s)} className="h-[70vh] w-full rounded-lg border bg-white" /> : <Empty>PDF no disponible.</Empty>)}

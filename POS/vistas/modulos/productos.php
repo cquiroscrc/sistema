@@ -482,7 +482,17 @@ MODAL EDITAR PRODUCTO
                 <input type="number" class="form-control input-lg" id="editarPotencia" name="editarPotencia" min="0" required>
               </div>
             </div>
-            <!-- FIN ENTRADAS  -->
+            </div>
+            <!-- ENTRADA PARA CABYS-->
+             <div class="form-group row">
+             <div class="col-xs-6">
+              <div class="input-group">
+                <span class="input-group-addon"><i class="ion ion-android-settings"></i></span>
+                <input type="number" class="form-control input-lg" placeholder="CABYS" id="editarCabys" name="editarCabys" min="0" required>
+              </div>
+            </div>
+          </div>
+            <!-- FIN ENTRADAS  --> 
         <!--=====================================
         PIE DEL MODAL
         ======================================-->
@@ -500,7 +510,6 @@ MODAL EDITAR PRODUCTO
     </div>
   </div>
 
-</div>
 
 <?php
   $eliminarProducto = new ControladorProductos();

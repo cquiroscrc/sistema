@@ -20,7 +20,7 @@
               <th>Nombre</th>
               <th>Cedula</th>
               <th>Email</th>
-              <th>Teléfono</th>
+              <th>Actividad</th>
             </tr>
         </thead>
         <tbody>
@@ -29,7 +29,7 @@
 
           
 
-          $consulta = "SELECT codigo,nombre,cedula,correo,telefono FROM Clientes WHERE comentario <> '**DESACTIVADO**' ORDER BY codigo";
+          $consulta = "SELECT codigo,nombre,cedula,correo,actividad_comercial FROM Clientes WHERE comentario <> '**DESACTIVADO**' ORDER BY codigo";
 
           $clientes = ControladorUtilitaria::ctrMostrarUtilitariaVar($consulta);
 
@@ -50,7 +50,7 @@
 
                     <td>'.$value["correo"].'</td>
 
-                    <td>'.$value["telefono"].'</td>
+                    <td>'.$value["actividad_comercial"].'</td>
 
                   </tr>';
           
@@ -66,7 +66,7 @@
                <th>Nombre</th>
                <th>Cedula</th>
                <th>Email</th>
-               <th>Teléfono</th>
+               <th>Actividad</th>
             </tr>
         </tfoot>
     </table>

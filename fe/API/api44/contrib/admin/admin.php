@@ -538,8 +538,8 @@ function validarFechasAntesDeProcesar(string $sessionID, string $Documento, stri
     if ($timestampDocumento !== null) {
         $fechaDocumento = obtenerFechaCalendarioDesdeTimestamp($timestampDocumento);
         if ($fechaDocumento > $hoy) {
-            return "Documento NO enviado: fechafact ($fechaDocumento) es posterior a hoy ($hoy). "
-                . "Probable cierre contable con fecha del dia siguiente. Corrija la fecha en el ERP y reintente.";
+            return "Documento NO enviado: fecha de emisión ($fechaDocumento) es posterior a hoy ($hoy). "
+            . "Corrija fecha_documento/clave en el ERP y reintente.";
         }
     }
 
@@ -687,8 +687,17 @@ function formatearSegmentoFechaClave(string $segmento): string
 
 function obtenerTimestampFechaDocumento(string $sessionID, string $Documento, string $TipoDoc): ?int
 {
+    // Preferir fecha fiscal (POS: fecha_documento). Fallback a fechafact (legado).
+    $fechaFiscal = ObtenerDatoFACTURA($sessionID, 'fecha_documento', $Documento, $TipoDoc);
+    if (!empty($fechaFiscal) && $fechaFiscal !== '0' && $fechaFiscal !== 'ERROR') {
+        $timestamp = strtotime($fechaFiscal);
+        if ($timestamp !== false) {
+            return $timestamp;
+        }
+    }
+
     $fechafact = ObtenerDatoFACTURA($sessionID, 'fechafact', $Documento, $TipoDoc);
-    if (!empty($fechafact) && $fechafact !== '0') {
+    if (!empty($fechafact) && $fechafact !== '0' && $fechafact !== 'ERROR') {
         $timestamp = strtotime($fechafact);
         if ($timestamp !== false) {
             return $timestamp;
@@ -876,34 +885,99 @@ function setEncabezadoDocumento(string $sessionID, string $Documento, string $Ti
 
         //Esto para cuando se genere el xml para NC
         if ($TipoDoc == "NC") {
-            //Facturas
             params_set("tipo_doc", "01");
-            params_set("numero", ObtenerDatoFACTURA($sessionID, "referencia", $Documento, $TipoDoc));
 
             //Codigo de motivo
             $codigo = ObtenerDatoFACTURA($sessionID, "motivo", $Documento, $TipoDoc);
             params_set("codigo_razon" , str_pad($codigo, 2, "0",STR_PAD_LEFT));
-
-            //Consecuti de la factura, para obtener luego la referencia
-            $referencia=ObtenerDatoTabla($sessionID, "referencia", "hfacturas", "nfac", $Documento);
-            //...13055
-
-            //Documento de referencia, pero buscando por el consecutivo interno
-            $consecutivo_interno=ObtenerDatoTabla($sessionID, "nfac", "hfacturas", "consecutivo", $referencia);
-            $tipo_doc=ObtenerDatoTabla($sessionID, "tipo_doc", "DOC_ELECTRONICO_PROCESADO", "numero_doc", $consecutivo_interno);
-            $tipo_doc_referencia=$tipo_doc=="FE"?"01":"04";
-            params_set("tipo_doc_referencia" , $tipo_doc_referencia);
-
-
-            $fecha_emision_ir=ObtenerDatoTabla($sessionID, "fecha_hora", "DOC_ELECTRONICO_PROCESADO", "numero_doc", $consecutivo_interno);
-            params_set("fecha_emision_ir" , $fecha_emision_ir);
-
-            $sello_sat_50=ObtenerDatoTabla($sessionID, "sello_sat", "DOC_ELECTRONICO_PROCESADO", "numero_doc", $consecutivo_interno);
-            params_set("sello_sat_50" , $sello_sat_50);
-
             //Descripcion del motivo
             params_set("razon", ObtenerDatoTabla($sessionID, "motivo", "tbl_Motivos", "cod_motivo", $codigo));
 
+            // Consecutivo 20 dígitos de la FA elegida en el POS
+            $referencia = trim((string)ObtenerDatoTabla($sessionID, "referencia", "hfacturas", "nfac", $Documento));
+            params_set("numero", $referencia);
+
+            if ($referencia === '' || $referencia === '0') {
+                SetContinuar(false);
+                Bitacora(
+                    $sessionID,
+                    "NC sin documento de referencia en hfacturas.referencia",
+                    $Documento,
+                    $TipoDoc,
+                    "Warning",
+                    true,
+                    "envio",
+                    "DOC_REF_SIN_CLAVE"
+                );
+            } else {
+                //Documento de referencia, pero buscando por el consecutivo interno
+                // nfac de la FA (ej. F-00000000153806)
+                $consecutivo_interno = trim((string)ObtenerDatoTabla($sessionID, "nfac", "hfacturas", "consecutivo", $referencia));
+
+                if ($consecutivo_interno === '' || $consecutivo_interno === '0') {
+                    SetContinuar(false);
+                    Bitacora(
+                        $sessionID,
+                        "NC: no se encontró nfac para el consecutivo de referencia ($referencia)",
+                        $Documento,
+                        $TipoDoc,
+                        "Warning",
+                        true,
+                        "envio",
+                        "DOC_REF_SIN_CLAVE"
+                    );
+                } else {
+                    // 1) Clave 50: procesado → si no, sat de hfacturas (la crea el POS al facturar)
+                    $sello_sat_50 = trim((string)ObtenerDatoTabla($sessionID, "sello_sat", "DOC_ELECTRONICO_PROCESADO", "numero_doc", $consecutivo_interno));
+                    if ($sello_sat_50 === '' || $sello_sat_50 === '0') {
+                        $sello_sat_50 = trim((string)ObtenerDatoTabla($sessionID, "sat", "hfacturas", "nfac", $consecutivo_interno));
+                    }
+                    params_set("sello_sat_50", $sello_sat_50);
+
+                    // 2) Fecha ref: procesado → fecha_documento → fechafact
+                    $fecha_emision_ir = trim((string)ObtenerDatoTabla($sessionID, "fecha_hora", "DOC_ELECTRONICO_PROCESADO", "numero_doc", $consecutivo_interno));
+                    if ($fecha_emision_ir === '' || $fecha_emision_ir === '0') {
+                        $fecha_emision_ir = trim((string)ObtenerDatoFACTURA($sessionID, "fecha_documento", $consecutivo_interno, "FE"));
+                    }
+                    if ($fecha_emision_ir === '' || $fecha_emision_ir === '0' || $fecha_emision_ir === 'ERROR') {
+                        $fecha_emision_ir = trim((string)ObtenerDatoFACTURA($sessionID, "fechafact", $consecutivo_interno, "FE"));
+                    }
+                    params_set("fecha_emision_ir", $fecha_emision_ir);
+
+                    // 3) TipoDocIR: priorizar TIPO_DOC real del origen (como antes: FE→01, resto TE→04).
+                    // No confiar en hfacturas.consecutivo/referencia: el POS a veces guarda "01"
+                    // aunque la clave/sat del TE ya tenga "04" (caso NC D-10627).
+                    $tipo_doc = trim((string)ObtenerDatoTabla($sessionID, "tipo_doc", "DOC_ELECTRONICO_PROCESADO", "numero_doc", $consecutivo_interno));
+                    $mapaTipo = ['FE' => '01', 'ND' => '02', 'NC' => '03', 'TE' => '04'];
+                    if (isset($mapaTipo[$tipo_doc])) {
+                        $tipo_doc_referencia = $mapaTipo[$tipo_doc];
+                    } elseif (strlen($sello_sat_50) >= 31) {
+                        // Tipo embebido en la clave 50 (pos. 30-31 del consecutivo interno)
+                        $tipo_doc_referencia = substr($sello_sat_50, 29, 2);
+                    } elseif (strlen($referencia) >= 10) {
+                        $tipo_doc_referencia = substr($referencia, 8, 2);
+                    } else {
+                        // Mismo default histórico: si no es FE conocido, tratar como TE (04)
+                        $tipo_doc_referencia = '04';
+                    }
+                    params_set("tipo_doc_referencia", $tipo_doc_referencia);
+
+                    if (strlen($sello_sat_50) < 50 || $fecha_emision_ir === '' || $fecha_emision_ir === '0' || strtotime($fecha_emision_ir) === false) {
+                        SetContinuar(false);
+                        Bitacora(
+                            $sessionID,
+                            "NC sin clave/fecha válida del documento de referencia ($consecutivo_interno / $referencia). "
+                            . "sello_len=" . strlen($sello_sat_50) . " fecha_ir=" . ($fecha_emision_ir === '' ? '(vacía)' : $fecha_emision_ir),
+                            $Documento,
+                            $TipoDoc,
+                            "Warning",
+                            true,
+                            "envio",
+                            "DOC_REF_SIN_CLAVE"
+                        );
+                    }
+                }
+            }
         }
 
         //Consecutivos y Tipo

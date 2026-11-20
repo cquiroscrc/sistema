@@ -194,6 +194,7 @@ foreach ($respuesta as $key => $valor) {
     $respuesta = ControladorUtilitaria::ctrMostrarUtilitariaVar($limpiar);
   }
 }
+
 echo '<br>';
 echo '<input name="button" type="button" onclick="factura" value="Cerrar esta ventana" /> 
 ';
@@ -203,7 +204,7 @@ echo '<input name="button" type="button" onclick="factura" value="Cerrar esta ve
         window.open('','_parent',''); 
         window.close(); 
       } 
-      setTimeout(closed(),5000);
+      setTimeout(closed(),3000);
     </SCRIPT> 
 
 </html>

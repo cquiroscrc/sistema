@@ -1,0 +1,329 @@
+#!/bin/bash
+# Respaldo del codigo de /var/www/lospaticas/sistema.
+# Compara el arbol con el ultimo envio correcto. Si no hay cambios, termina.
+# Si hay cambios: commit en un clon aparte (no toca el repositorio en produccion),
+# push a GitHub y paquete tar.gz a MEGA /Respaldos/codigo.
+# La subida a MEGA la hace pat-sql-web01 con la sesion que ya usa el respaldo de inventario.
+# No imprime secretos.
+set -euo pipefail
+
+SRC=/var/www/lospaticas/sistema
+MIRROR=/var/lib/lospaticas/codigo-mirror
+STATE=/var/lib/lospaticas/codigo-respaldo.state
+GITHUB_URL=git@github.com:cquiroscrc/sistema.git
+GITHUB_KEY=/etc/lospaticas/ssh/paticas-codigo-github
+KNOWN=/etc/lospaticas/ssh/known_hosts
+ADMIN_KEY=/home/administrator/.ssh/id_ed25519_sql100
+ADMIN_HOSTS=/home/administrator/.ssh/known_hosts
+BACKUP_KEY=/etc/lospaticas/ssh/paticas-backup-inventario
+SQL_HOST=administrator@172.16.12.100
+LOCK=/run/paticas-codigo-respaldo/run.lock
+MAX_BYTES=$((800 * 1024 * 1024))
+
+log() { echo "$(TZ=America/Costa_Rica date '+%Y-%m-%d %H:%M:%S') $*"; }
+die() { log "ERROR $*"; exit 1; }
+g() { git -c safe.directory="*" "$@"; }
+
+mkdir -p /run/paticas-codigo-respaldo /var/lib/lospaticas /var/log/lospaticas
+touch /var/log/lospaticas/codigo-respaldo.log
+chgrp www-data /var/log/lospaticas/codigo-respaldo.log 2>/dev/null || true
+chmod 640 /var/log/lospaticas/codigo-respaldo.log 2>/dev/null || true
+
+exec 9>"$LOCK"
+if ! flock -n 9; then
+  log "otra corrida sigue en curso; se omite"
+  exit 0
+fi
+
+[ -d "$SRC/.git" ] || die "no hay repositorio en $SRC"
+command -v git >/dev/null || die "falta git"
+command -v python3 >/dev/null || die "falta python3"
+
+TMP=$(mktemp -d /tmp/paticas-codigo.XXXXXX)
+trap 'rm -rf "$TMP"' EXIT
+LISTA="$TMP/lista"
+
+mapfile -t RESUMEN < <(python3 - "$SRC" "$LISTA" << 'PY'
+import hashlib, os, stat, subprocess, sys
+src, lista = sys.argv[1], sys.argv[2]
+prefijos = (
+    "POS/Pedido/", "POS/Recibos/", "POS/Proformas/", "POS/Ordenes/", "POS/Respaldo/",
+    "subida/", "subida_cat/",
+)
+
+def rechazar(path: str) -> str:
+    if path.startswith("/") or ".." in path.split("/") or "\n" in path or "\t" in path:
+        return "ruta"
+    for pref in prefijos:
+        if path == pref[:-1] or path.startswith(pref):
+            return "datos"
+    base = path.rsplit("/", 1)[-1]
+    if base == ".env" or (base.endswith(".env") and not base.endswith(".env.example")):
+        return "secreto"
+    if base.endswith(".orig"):
+        return "orig"
+    return ""
+
+def git_z(*args: str) -> list[str]:
+    raw = subprocess.check_output(["git", "-c", "safe.directory=*", "-C", src, *args])
+    return [p.decode("utf-8", "surrogateescape") for p in raw.split(b"\0") if p]
+
+tracked = set(git_z("ls-files", "-z"))
+orden: list[str] = []
+vistos: set[str] = set()
+for path in list(tracked) + git_z("ls-files", "-z", "--others", "--exclude-standard"):
+    if path in vistos:
+        continue
+    vistos.add(path)
+    orden.append(path)
+
+keep: list[str] = []
+saltos: dict[str, int] = {}
+total = 0
+for path in orden:
+    why = rechazar(path)
+    if why:
+        saltos[why] = saltos.get(why, 0) + 1
+        continue
+    full = os.path.join(src, path)
+    try:
+        st = os.lstat(full)
+    except FileNotFoundError:
+        saltos["ausente"] = saltos.get("ausente", 0) + 1
+        continue
+    if stat.S_ISLNK(st.st_mode):
+        destino = os.readlink(full)
+        if destino.startswith("/") or ".." in destino.split("/"):
+            saltos["enlace"] = saltos.get("enlace", 0) + 1
+            continue
+    elif not stat.S_ISREG(st.st_mode):
+        saltos["tipo"] = saltos.get("tipo", 0) + 1
+        continue
+    if path not in tracked and st.st_size > 20 * 1024 * 1024:
+        saltos["grande"] = saltos.get("grande", 0) + 1
+        print(f"OMITE grande {st.st_size} {path}", file=sys.stderr)
+        continue
+    keep.append(path)
+    total += st.st_size
+
+keep.sort()
+huella = hashlib.sha256()
+for path in keep:
+    full = os.path.join(src, path)
+    st = os.lstat(full)
+    huella.update(path.encode("utf-8", "surrogateescape"))
+    huella.update(b"\0")
+    if stat.S_ISLNK(st.st_mode):
+        huella.update(b"120000\0")
+        huella.update(os.readlink(full).encode("utf-8", "surrogateescape"))
+    else:
+        modo = b"100755" if st.st_mode & 0o111 else b"100644"
+        huella.update(modo + b"\0")
+        with open(full, "rb") as fh:
+            for buf in iter(lambda: fh.read(1024 * 1024), b""):
+                huella.update(buf)
+    huella.update(b"\0")
+
+with open(lista, "wb") as fh:
+    if keep:
+        fh.write(b"\0".join(p.encode("utf-8", "surrogateescape") for p in keep) + b"\0")
+print(f"TREE={huella.hexdigest()}")
+print(f"FILES={len(keep)}")
+print(f"BYTES={total}")
+if saltos:
+    print("SALTOS=" + ",".join(f"{k}:{v}" for k, v in sorted(saltos.items())))
+PY
+)
+
+TREE=""; FILES=""; BYTES=""; SALTOS=""
+for linea in "${RESUMEN[@]}"; do
+  case "$linea" in
+    TREE=*) TREE=${linea#TREE=} ;;
+    FILES=*) FILES=${linea#FILES=} ;;
+    BYTES=*) BYTES=${linea#BYTES=} ;;
+    SALTOS=*) SALTOS=${linea#SALTOS=} ;;
+  esac
+done
+[[ "$TREE" =~ ^[0-9a-f]{64}$ ]] || die "no se pudo medir el arbol"
+[[ "$FILES" =~ ^[0-9]+$ && "$BYTES" =~ ^[0-9]+$ ]] || die "medida invalida"
+[ "$FILES" -gt 0 ] || die "el arbol quedo vacio"
+if [ "$BYTES" -gt "$MAX_BYTES" ]; then
+  die "el arbol pesa $BYTES bytes, por encima del tope $MAX_BYTES; no se envia"
+fi
+
+state_valor() {
+  [ -f "$STATE" ] || return 0
+  sed -n "s/^$1=//p" "$STATE" | tail -1
+}
+
+GH=""; MG=""
+if [ "$(state_valor TREE)" = "$TREE" ]; then
+  GH=$(state_valor GITHUB)
+  MG=$(state_valor MEGA)
+fi
+guardar_estado() {
+  local tmp
+  tmp=$(mktemp /var/lib/lospaticas/.codigo-respaldo.XXXXXX)
+  printf 'TREE=%s\nGITHUB=%s\nMEGA=%s\n' "$TREE" "${GH:-}" "${MG:-}" > "$tmp"
+  chmod 640 "$tmp"
+  mv -f "$tmp" "$STATE"
+}
+
+if [ "$GH" = "ok" ] && [ "$MG" = "ok" ]; then
+  log "sin cambios ($FILES archivos); no se envia"
+  exit 0
+fi
+
+log "cambios detectados archivos=$FILES bytes=$BYTES${SALTOS:+ saltos=$SALTOS}"
+
+libre=$(df -B1 --output=avail /var/lib | tail -1 | tr -d ' ')
+[ "$libre" -ge $((2 * 1024 * 1024 * 1024)) ] || die "poco espacio en /var/lib ($libre bytes libres)"
+
+sync_github() {
+  [ -r "$GITHUB_KEY" ] || { log "ERROR github: falta la llave de despliegue"; return 1; }
+  [ -r "$KNOWN" ] || { log "ERROR github: falta known_hosts"; return 1; }
+  # Copia el .git como root. Un clone/fetch directo choca con el dueno www-data.
+  copiar_git() {
+    local dest="$1"
+    rm -rf "$dest"
+    mkdir -p "$dest"
+    cp -r "$SRC/.git/." "$dest/"
+  }
+  if [ ! -d "$MIRROR/.git" ]; then
+    log "github: preparando clon de respaldo"
+    rm -rf "$MIRROR"
+    mkdir -p "$MIRROR"
+    copiar_git "$MIRROR/.git" || { log "ERROR github: no se pudo copiar el repositorio"; return 1; }
+    g -C "$MIRROR" config --unset-all core.worktree >/dev/null 2>&1 || true
+    g -C "$MIRROR" remote add github "$GITHUB_URL" || { log "ERROR github: no se pudo configurar el remoto"; return 1; }
+    g -C "$MIRROR" config user.name "Respaldo codigo"
+    g -C "$MIRROR" config user.email "codigo-respaldo@lospaticas.local"
+  fi
+  g -C "$MIRROR" remote get-url github >/dev/null 2>&1 || g -C "$MIRROR" remote add github "$GITHUB_URL"
+  log "github: leyendo commits locales"
+  copiar_git "$TMP/src.git" || { log "ERROR github: no se pudo copiar el repositorio"; return 1; }
+  g -C "$MIRROR" fetch "$TMP/src.git" "+main:refs/remotes/local/main" || { log "ERROR github: no se pudieron leer los commits"; return 1; }
+  if ! g -C "$MIRROR" rev-parse --verify --quiet main >/dev/null; then
+    g -C "$MIRROR" checkout -B main refs/remotes/local/main
+  fi
+  local tree parent_m parent_s nuevo msg
+  tree=$(python3 - "$MIRROR" "$SRC" "$LISTA" << 'PY'
+import os, stat, subprocess, sys
+mirror, src, lista = sys.argv[1], sys.argv[2], sys.argv[3]
+index = subprocess.check_output(["mktemp", "/tmp/paticas-codigo-index.XXXXXX"], text=True).strip()
+env = os.environ.copy()
+env["GIT_INDEX_FILE"] = index
+def git(*args, env=env, capture=True):
+    return subprocess.run(["git", "-c", "safe.directory=*", "-c", "safe.directory=*", "-C", mirror, *args], check=True, env=env, capture_output=capture)
+try:
+    git("read-tree", "refs/remotes/local/main")
+    raw = open(lista, "rb").read().split(b"\0")
+    selected = [p.decode("utf-8", "surrogateescape") for p in raw if p]
+    chosen = set(selected)
+    regulares: list[tuple[str, str, str]] = []
+    info: list[str] = []
+    for path in selected:
+        full = os.path.join(src, path)
+        st = os.lstat(full)
+        if stat.S_ISLNK(st.st_mode):
+            blob = subprocess.check_output(
+                ["git", "-C", mirror, "hash-object", "-w", "--stdin"],
+                input=os.readlink(full).encode("utf-8", "surrogateescape"),
+            ).decode().strip()
+            info.append(f"120000 {blob}\t{path}\n")
+        else:
+            modo = "100755" if st.st_mode & 0o111 else "100644"
+            regulares.append((modo, full, path))
+    if regulares:
+        proc = subprocess.run(
+            ["git", "-C", mirror, "hash-object", "-w", "--stdin-paths"],
+            input="".join(full + "\n" for _, full, _ in regulares),
+            text=True, capture_output=True, check=True,
+        )
+        huellas = [h for h in proc.stdout.splitlines() if h]
+        if len(huellas) != len(regulares):
+            raise SystemExit("hash-object no devolvio una huella por archivo")
+        for (modo, _full, path), blob in zip(regulares, huellas):
+            info.append(f"{modo} {blob}\t{path}\n")
+    listed = subprocess.check_output(["git", "-c", "safe.directory=*", "-C", mirror, "ls-files", "-z"], env=env)
+    vacio = "0" * 40
+    for item in listed.split(b"\0"):
+        if not item:
+            continue
+        path = item.decode("utf-8", "surrogateescape")
+        if path not in chosen:
+            info.append(f"0 {vacio}\t{path}\n")
+    if info:
+        subprocess.run(
+            ["git", "-c", "safe.directory=*", "-C", mirror, "update-index", "--index-info"],
+            input="".join(info), text=True, env=env, check=True,
+        )
+    print(subprocess.check_output(["git", "-c", "safe.directory=*", "-C", mirror, "write-tree"], env=env, text=True).strip())
+finally:
+    try:
+        os.remove(index)
+    except FileNotFoundError:
+        pass
+PY
+)
+  [[ "$tree" =~ ^[0-9a-f]{40}$ ]] || { log "ERROR github: arbol invalido"; return 1; }
+  parent_m=$(g -C "$MIRROR" rev-parse main)
+  parent_s=$(g -C "$MIRROR" rev-parse refs/remotes/local/main)
+  if [ "$tree" = "$(g -C "$MIRROR" rev-parse main^{tree})" ]; then
+    log "github: el commit local ya contiene este arbol"
+  else
+    msg="respaldo $(TZ=America/Costa_Rica date '+%Y-%m-%d %H:%M')"
+    if [ "$parent_m" = "$parent_s" ]; then
+      nuevo=$(g -C "$MIRROR" commit-tree "$tree" -p "$parent_m" -m "$msg")
+    else
+      nuevo=$(g -C "$MIRROR" commit-tree "$tree" -p "$parent_m" -p "$parent_s" -m "$msg")
+    fi
+    g -C "$MIRROR" update-ref refs/heads/main "$nuevo"
+    log "github: commit ${nuevo:0:12}"
+  fi
+  log "github: push a $GITHUB_URL"
+  GIT_SSH_COMMAND="ssh -F /dev/null -i $GITHUB_KEY -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$KNOWN" \
+    g -C "$MIRROR" push github main || { log "ERROR github: el push fallo"; return 1; }
+  GH=ok
+  guardar_estado
+  log "github: listo"
+}
+
+subir_mega() {
+  local nombre tar
+  nombre="codigo_$(TZ=America/Costa_Rica date +%Y%m%d_%H%M).tar.gz"
+  tar="$TMP/$nombre"
+  log "mega: empaquetando $nombre"
+  if ! tar -C "$SRC" -czf "$tar" --null --no-recursion --files-from="$LISTA"; then
+    log "ERROR mega: no se pudo empaquetar"
+    return 1
+  fi
+  bytes=$(stat -c '%s' "$tar")
+  if [ "$bytes" -lt 1000000 ]; then
+    log "ERROR mega: paquete demasiado chico ($bytes bytes)"
+    return 1
+  fi
+  log "mega: paquete bytes=$bytes"
+  scp -q -i "$ADMIN_KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+    -o UserKnownHostsFile="$ADMIN_HOSTS" -o ConnectTimeout=20 \
+    "$tar" "${SQL_HOST}:codigo-inbox/${nombre}" || { log "ERROR mega: no se pudo copiar el paquete"; return 1; }
+  ssh -F /dev/null -i "$BACKUP_KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+    -o UserKnownHostsFile="$KNOWN" -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \
+    "$SQL_HOST" "codigo-put $nombre" || { log "ERROR mega: la subida fallo"; return 1; }
+  MG=ok
+  guardar_estado
+  log "mega: listo $nombre"
+}
+
+fallo=0
+if [ "$GH" = "ok" ]; then
+  log "github: este arbol ya estaba publicado"
+else
+  sync_github || fallo=1
+fi
+if [ "$MG" = "ok" ]; then
+  log "mega: este arbol ya estaba subido"
+else
+  subir_mega || fallo=1
+fi
+exit "$fallo"
