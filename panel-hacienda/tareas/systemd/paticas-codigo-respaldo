@@ -282,8 +282,8 @@ PY
     log "github: commit ${nuevo:0:12}"
   fi
   log "github: push a $GITHUB_URL"
-  GIT_SSH_COMMAND="ssh -F /dev/null -i $GITHUB_KEY -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$KNOWN" \
-    g -C "$MIRROR" push github main || { log "ERROR github: el push fallo"; return 1; }
+  GIT_SSH_COMMAND="ssh -F /dev/null -i $GITHUB_KEY -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$KNOWN -o ServerAliveInterval=15 -o ServerAliveCountMax=40" \
+    g -C "$MIRROR" push --progress github main || { log "ERROR github: el push fallo"; return 1; }
   GH=ok
   guardar_estado
   log "github: listo"
