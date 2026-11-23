@@ -352,7 +352,7 @@ $pdf-> writeHTML($bloque7,false,false,false,false,'');
 
         $sql="SELECT r.id_planilla, r.fecha, r.id_empleado, r.base, r.ccss, r.extras,r.reajuste, r.total, r.mandados,r.otros_ingresos, e.nombre, e.apellido, r.comision
       FROM rh_planilla r, rh_empleados e WHERE Fecha BETWEEN '$fecha1' AND
-      '$fecha2' AND e.id_empleado = r.id_empleado AND r.id_empleado= '$empl' order by r.id_empleado, r.fecha";
+      '$fecha2' AND e.id_empleado = r.id_empleado AND r.id_empleado= '$empl'  order by r.id_empleado, r.fecha";
         $nombre='';
         $treajuste_parcial=0;
         $treajuste=0;
