@@ -124,9 +124,9 @@ $retencion=floatval($calculo10)+floatval($calculo20)+floatval($calculo15);
 if ($retencion==0) {
 
 }else{
-    //$retencion=$retencion-floatval($hijos)-floatval($conyuge); //Roberto
+    $retencion=$retencion-floatval($hijos)-floatval($conyuge); //Roberto
     //$retencion=$retencion-floatval($conyuge);// Lico
-    $retencion=$retencion-floatval($hijos)-floatval($hijos); //Hernan
+    //$retencion=$retencion-floatval($hijos)-floatval($hijos); //Hernan
 }
 
 //echo $retencion;
