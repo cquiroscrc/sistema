@@ -126,7 +126,9 @@
 
             }else{
                 if (Rtipo=='BANCOS'){
+                  
                     window.open("vistas/modulos/reportes/reporte_bancos.php?fini="+Rini+"&ffin="+Rfin+"&tipor="+Rtipo);
+                    
                 }else{
                     if (Rtipo=='ConteoE' || Rtipo=='ConteoS' || Rtipo=='Garantias'|| Rtipo=='VendidoE'|| Rtipo=='VendidoS' || Rtipo=='Woocommerce' ){
                         swal({
@@ -139,6 +141,7 @@
                         });
 
                     }else{
+                        
                         window.open("vistas/modulos/reportes/reporte_excel.php?fini="+Rini+"&ffin="+Rfin+"&tipor="+Rtipo);
                     }
                 }

@@ -498,7 +498,7 @@ if(isset($_REQUEST['cuenta']) && !empty($_REQUEST['cuenta'])){
 
             }
             if ($tipor=="BANCOS") {
-
+                
                 $sql="SELECT b.Fecha,b.Cuenta,b.Documento,b.Descripcion,b.Credito,b.Debito, c.Banco FROM 
                 tbl_Bancos b, tbl_Cuentas c WHERE b.Cuenta ='$cuenta' AND b.Fecha BETWEEN '$fini 00:00:00.000' AND 
                 '$ffin 23:59:59.000' AND b.Cuenta= c.Cuenta ORDER BY b.Fecha,b.Descripcion";
